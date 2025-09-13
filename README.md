@@ -1,3 +1,3 @@
-# LINE Islamic Bot with Full Texts
+# LINE Islamic Bot (Clean Version)
 
-بوت LINE كامل بالأذكار والأدعية والقرآن.
+بوت LINE كامل بالأذكار والأدعية مع كود نظيف (بدون مشاكل مسافات).
