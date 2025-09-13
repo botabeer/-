@@ -1,12 +1,13 @@
 from flask import Flask, request, abort
+from dotenv import load_dotenv
+import os
+from apscheduler.schedulers.background import BackgroundScheduler
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import os
-import random
-import threading
-import time
 
+# تحميل متغيرات البيئة
+load_dotenv()
 app = Flask(__name__)
 
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
@@ -15,62 +16,69 @@ LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-auto_reminder = True
-
-WELCOME_MESSAGE = """مرحباً بك 👋
-أنا بوت "ذكرني" لمساعدتك على الأذكار والأدعية والآيات والأحاديث.
-اكتب "مساعدة" لرؤية جميع الأوامر المتاحة.
-"""
-
-HELP_MESSAGE = """الأوامر المتاحة:
-صباح  → أذكار الصباح
-مساء  → أذكار المساء
-نوم   → أذكار النوم
-دعاء  → أدعية عامة
-حديث  → حديث نبوي
-آية   → آية قرآنية
-تسبيح → عداد التسبيح
-تشغيل → تفعيل التذكير التلقائي
-إيقاف → إيقاف التذكير التلقائي
-"""
-
-AZKAR_SABAH = """أذكار الصباح
+# رسائل الأذكار والأدعية
+اذكار_الصباح = """أذكار الصباح
 آية الكرسي
 المعوذات
 اللهم بك أصبحنا وبك أمسينا وبك نحيا وبك نموت وإليك النشور
 """
 
-AZKAR_MASAA = """أذكار المساء
+اذكار_المساء = """أذكار المساء
 آية الكرسي
 المعوذات
 اللهم بك أمسينا وبك أصبحنا وبك نحيا وبك نموت وإليك المصير
 """
 
-AZKAR_NOUM = """أذكار النوم
+اذكار_النوم = """أذكار النوم
 باسمك ربي وضعت جنبي وبك أرفعه
 اللهم قني عذابك يوم تبعث عبادك
 """
 
-DUA_LIST = [
-    "اللهم آتنا في الدنيا حسنة وفي الآخرة حسنة وقنا عذاب النار",
-    "رب اغفر لي ولوالدي وللمؤمنين يوم يقوم الحساب",
-    "اللهم اجعلني لك شكارا لك ذكارا لك رهابا لك مطواعا لك مخبتا"
-]
+اية_الكرسي = """آية الكرسي
+اللّه لا إله إلا هو الحي القيوم لا تأخذه سنة ولا نوم...
+"""
 
-HADITH_LIST = [
-    "قال رسول الله ﷺ: من قال سبحان الله وبحمده مئة مرة غفرت خطاياه وإن كانت مثل زبد البحر",
-    "قال رسول الله ﷺ: الكلمة الطيبة صدقة",
-    "قال رسول الله ﷺ: أحب الأعمال إلى الله أدومها وإن قل"
-]
+دعاء = """دعاء
+اللهم آتنا في الدنيا حسنة وفي الآخرة حسنة وقنا عذاب النار
+"""
 
-AYAT_LIST = [
-    "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ... [البقرة:255]",
-    "قُلْ هُوَ اللَّهُ أَحَدٌ * اللَّهُ الصَّمَدُ ... [الإخلاص]",
-    "قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ... [الفلق]"
-]
+حديث = """حديث
+قال رسول الله ﷺ: "الكلمة الطيبة صدقة"
+"""
 
-tasbeeh_counter = {}
+# عداد التسبيح
+عداد = {}
 
+# الترحيب + الأوامر
+رسالة_الترحيب = """مرحباً بك في بوت ذكرني
+البوت يرسل تذكير تلقائي بالأذكار والأدعية والآيات
+
+الأوامر المتاحة
+صباح : أذكار الصباح
+مساء : أذكار المساء
+نوم : أذكار النوم
+آية : آية الكرسي
+دعاء : دعاء
+حديث : حديث نبوي
+تسبيح : عداد للتسبيح
+تشغيل : لتفعيل التذكير التلقائي
+إيقاف : لإيقاف التذكير التلقائي
+"""
+
+# نشر تلقائي
+المشتركين = set()
+
+def ارسال_تلقائي():
+    for user in المشتركين:
+        line_bot_api.push_message(user, TextSendMessage(text=اذكار_الصباح))
+        line_bot_api.push_message(user, TextSendMessage(text=اذكار_المساء))
+        line_bot_api.push_message(user, TextSendMessage(text=اذكار_النوم))
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(ارسال_تلقائي, "interval", hours=24)
+scheduler.start()
+
+# استقبال الرسائل
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -80,70 +88,38 @@ def callback():
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
-
     return 'OK'
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    global auto_reminder
-
     user_id = event.source.user_id
-    text = event.message.text.strip()
+    النص = event.message.text.strip()
 
-    if text == "مساعدة":
-        reply = HELP_MESSAGE
-    elif text == "صباح":
-        reply = AZKAR_SABAH
-    elif text == "مساء":
-        reply = AZKAR_MASAA
-    elif text == "نوم":
-        reply = AZKAR_NOUM
-    elif text == "دعاء":
-        reply = random.choice(DUA_LIST)
-    elif text == "حديث":
-        reply = random.choice(HADITH_LIST)
-    elif text == "آية":
-        reply = random.choice(AYAT_LIST)
-    elif text == "تسبيح":
-        tasbeeh_counter[user_id] = 0
-        reply = "عداد التسبيح\nاكتب: سبحان الله - الحمد لله - الله أكبر"
-    elif text in ["سبحان الله", "الحمد لله", "الله أكبر"]:
-        if user_id in tasbeeh_counter:
-            tasbeeh_counter[user_id] += 1
-            reply = f"تم التسبيح {tasbeeh_counter[user_id]} مرة"
-        else:
-            reply = "اكتب تسبيح لتشغيل العداد"
-    elif text == "تشغيل":
-        auto_reminder = True
-        reply = "تم تفعيل التذكير التلقائي"
-    elif text == "إيقاف":
-        auto_reminder = False
-        reply = "تم إيقاف التذكير التلقائي"
+    if النص == "صباح":
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=اذكار_الصباح))
+    elif النص == "مساء":
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=اذكار_المساء))
+    elif النص == "نوم":
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=اذكار_النوم))
+    elif النص == "آية":
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=اية_الكرسي))
+    elif النص == "دعاء":
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=دعاء))
+    elif النص == "حديث":
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=حديث))
+    elif النص == "تسبيح":
+        عداد[user_id] = عداد.get(user_id, 0) + 1
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"عدد التسبيحات: {عداد[user_id]}"))
+    elif النص == "تشغيل":
+        المشتركين.add(user_id)
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم تفعيل التذكير التلقائي"))
+    elif النص == "إيقاف":
+        المشتركين.discard(user_id)
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف التذكير التلقائي"))
+    elif النص == "مساعدة":
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=رسالة_الترحيب))
     else:
-        reply = WELCOME_MESSAGE
-
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply)
-    )
-
-def send_reminders():
-    while True:
-        if auto_reminder:
-            try:
-                line_bot_api.broadcast(TextSendMessage(text=AZKAR_SABAH))
-                time.sleep(5)
-                line_bot_api.broadcast(TextSendMessage(text=AZKAR_MASAA))
-                time.sleep(5)
-                random_choice = random.choice(DUA_LIST + HADITH_LIST)
-                line_bot_api.broadcast(TextSendMessage(text=random_choice))
-                time.sleep(5)
-                line_bot_api.broadcast(TextSendMessage(text=AZKAR_NOUM))
-            except Exception as e:
-                print("خطأ في التذكير:", e)
-        time.sleep(60 * 60 * 6)
-
-threading.Thread(target=send_reminders, daemon=True).start()
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="اكتب مساعدة لعرض الأوامر"))
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
