@@ -1,133 +1,91 @@
-import os
-import random
 from flask import Flask, request, abort
-from apscheduler.schedulers.background import BackgroundScheduler
-from dotenv import load_dotenv
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-
-# تحميل القيم من .env
-load_dotenv()
-CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+import os, random
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
-line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(CHANNEL_SECRET)
 
-# قائمة الأذكار والأدعية
-adhkar_sabah = [
-    "أذكار الصباح: أصبحنا وأصبح الملك لله...",
-    "اللهم بك أصبحنا وبك أمسينا وبك نحيا وبك نموت وإليك النشور",
-    "اللهم ما أصبح بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك..."
-]
-adhkar_masaa = [
-    "أذكار المساء: أمسينا وأمسى الملك لله...",
-    "اللهم بك أمسينا وبك أصبحنا وبك نحيا وبك نموت وإليك المصير",
-    "اللهم ما أمسى بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك..."
-]
-adhkar_nawm = [
-    "أذكار النوم: باسمك ربي وضعت جنبي وبك أرفعه...",
-    "اللهم قني عذابك يوم تبعث عبادك",
-    "سبحان الله ٣٣ الحمد لله ٣٣ الله أكبر ٣٤"
-]
-ad3iya = [
-    "اللهم إني أسألك العفو والعافية",
-    "ربنا آتنا في الدنيا حسنة وفي الآخرة حسنة وقنا عذاب النار",
-    "اللهم اغفر لي ولوالدي ولجميع المسلمين"
-]
-ahadith = [
-    "قال رسول الله ﷺ: لا تحقرن من المعروف شيئاً",
-    "قال رسول الله ﷺ: الدين النصيحة",
-    "قال رسول الله ﷺ: من سلك طريقاً يلتمس فيه علماً سهّل الله له به طريقاً إلى الجنة"
-]
-ayat = [
-    "قال تعالى: واذكر ربك كثيراً وسبح بالعشي والإبكار",
-    "قال تعالى: ألا بذكر الله تطمئن القلوب",
-    "قال تعالى: فاذكروني أذكركم واشكروا لي ولا تكفرون"
-]
+line_bot_api = LineBotApi(os.getenv("LINE_CHANNEL_ACCESS_TOKEN"))
+handler = WebhookHandler(os.getenv("LINE_CHANNEL_SECRET"))
 
-# عداد التسبيح
+# قاعدة بيانات مؤقتة للمشتركين
+subscribers = set()
 tasbih_counter = {}
 
-# جدولة الإرسال التلقائي
-scheduler = BackgroundScheduler()
+# نصوص للأذكار والأدعية
+adhkar_sabah = """أذكار الصباح كاملة...
+(النصوص الكاملة هنا)"""
 
-def send_auto_messages():
-    users = list(tasbih_counter.keys())
-    if not users:
-        return
-    chosen = random.sample(ad3iya + adhkar_sabah + adhkar_masaa + adhkar_nawm + ahadith + ayat, 3)
-    message = "\n\n".join(chosen)
-    for uid in users:
-        line_bot_api.push_message(uid, TextSendMessage(text=message))
+adhkar_masaa = """أذكار المساء كاملة...
+(النصوص الكاملة هنا)"""
 
-scheduler.add_job(send_auto_messages, "interval", hours=5)
-scheduler.start()
+adhkar_noom = """أذكار النوم كاملة (مع الفاتحة، آية الكرسي، الإخلاص، الفلق، الناس، آخر البقرة)...
+(النصوص الكاملة هنا)"""
 
-@app.route("/callback", methods=["POST"])
+ad3ya = ["اللهم اغفر لي ولوالدي", "اللهم ارزقني علماً نافعاً", "اللهم اجعلني من أهل القرآن"]
+
+ahadith = ["قال رسول الله ﷺ: من قال سبحان الله وبحمده مئة مرة حطت خطاياه.", 
+"قال رسول الله ﷺ: لا تحقرن من المعروف شيئاً."]
+
+ayat = ["إِنَّ مَعَ الْعُسْرِ يُسْرًا", "وَقُل رَّبِّ زِدْنِي عِلْمًا"]
+
+@app.route("/callback", methods=['POST'])
 def callback():
-    signature = request.headers["X-Line-Signature"]
+    signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
-    return "OK"
+    return 'OK'
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
+    user_id = event.source.user_id
     text = event.message.text.strip()
-    uid = event.source.user_id
 
-    if uid not in tasbih_counter:
-        tasbih_counter[uid] = 0
-
-    if text == "صباح":
-        reply = "\n\n".join(adhkar_sabah)
+    if text == "مساعدة":
+        reply = "الأوامر: صباح - مساء - نوم - دعاء - حديث - آية - تسبيح - تشغيل - إيقاف"
+    elif text == "صباح":
+        reply = adhkar_sabah
     elif text == "مساء":
-        reply = "\n\n".join(adhkar_masaa)
+        reply = adhkar_masaa
     elif text == "نوم":
-        reply = "\n\n".join(adhkar_nawm)
+        reply = adhkar_noom
     elif text == "دعاء":
-        reply = "\n\n".join(ad3iya)
+        reply = random.choice(ad3ya)
     elif text == "حديث":
-        reply = "\n\n".join(ahadith)
+        reply = random.choice(ahadith)
     elif text == "آية":
-        reply = "\n\n".join(ayat)
-    elif text == "تسبيح":
-        tasbih_counter[uid] += 1
-        reply = f"عدد التسبيح الحالي: {tasbih_counter[uid]}"
-    elif text == "مساعدة":
-        reply = (
-            "الاوامر:\n"
-            "صباح - عرض أذكار الصباح\n"
-            "مساء - عرض أذكار المساء\n"
-            "نوم - عرض أذكار النوم\n"
-            "دعاء - عرض الأدعية\n"
-            "حديث - عرض الأحاديث\n"
-            "آية - عرض الآيات\n"
-            "تسبيح - زيادة العداد\n"
-            "تشغيل - تفعيل الارسال التلقائي\n"
-            "إيقاف - إيقاف الارسال التلقائي"
-        )
+        reply = random.choice(ayat)
     elif text == "تشغيل":
-        tasbih_counter[uid] = 0
-        reply = "تم تفعيل الإرسال التلقائي لك."
+        subscribers.add(user_id)
+        reply = "تم تفعيل الإرسال التلقائي بنجاح. سيتم تذكيرك يومياً."
     elif text == "إيقاف":
-        if uid in tasbih_counter:
-            del tasbih_counter[uid]
-        reply = "تم إيقاف الإرسال التلقائي."
+        subscribers.discard(user_id)
+        reply = "تم إيقاف الإرسال التلقائي. لن تستقبل التنبيهات إلا إذا أعدت تشغيل البوت."
+    elif text.startswith("تسبيح"):
+        count = tasbih_counter.get(user_id, 0) + 1
+        tasbih_counter[user_id] = count
+        reply = f"عدد التسبيح الحالي: {count}"
     else:
-        reply = (
-            "مرحبا بك\n\n"
-            "بوت ذكرني، الذي يهدف إلى تذكيرك بالأذكار والأدعية والأحاديث النبوية الصحيحة.\n\n"
-            "اكتب كلمة مساعدة لعرض الأوامر."
-        )
+        reply = "بوت ذكرني: صباح - مساء - نوم - دعاء - حديث - آية - تسبيح - تشغيل - إيقاف"
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
 
+# وظيفة الإرسال التلقائي
+def send_auto():
+    if not subscribers: return
+    items = [random.choice([adhkar_sabah, adhkar_masaa, adhkar_noom, random.choice(ad3ya), random.choice(ahadith), random.choice(ayat)]) for _ in range(3)]
+    text = "\n\n".join(items)
+    for uid in subscribers:
+        line_bot_api.push_message(uid, TextSendMessage(text=text))
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(send_auto, 'interval', hours=4)
+scheduler.start()
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
