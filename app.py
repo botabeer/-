@@ -24,7 +24,7 @@ subscribers = set()
 auto_reminder_enabled = True
 
 # عداد التسبيح لكل مستخدم لكل عبارة
-tasbih_limits = 30
+tasbih_limits = 33
 tasbih_counts = {}  # structure: { user_id: {"سبحان الله": n, "الحمد لله": m, "الله أكبر": k} }
 
 def ensure_user_counts(uid):
@@ -215,7 +215,7 @@ def handle_message(event):
     if text == "تسبيح":
         ensure_user_counts(user_id)
         counts = tasbih_counts[user_id]
-        status = f"سبحان الله: {counts['سبحان الله']}/30\nالحمد لله: {counts['الحمد لله']}/30\nالله أكبر: {counts['الله أكبر']}/30"
+        status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
     if text in ("سبحان الله", "الحمد لله", "الله أكبر"):
@@ -226,7 +226,7 @@ def handle_message(event):
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"اكتمل {text} ({tasbih_limits} مرة)"))
             else:
                 counts = tasbih_counts[user_id]
-                status = f"سبحان الله: {counts['سبحان الله']}/30\nالحمد لله: {counts['الحمد لله']}/30\nالله أكبر: {counts['الله أكبر']}/30"
+                status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         else:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"{text} مكتمل ({tasbih_limits} مرة)"))
