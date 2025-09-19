@@ -74,14 +74,6 @@ daily_adhkar = [
     "اللهم اغفر لنا ذنوبنا وكفر عنا سيئاتنا وتوفنا مع الأبرار"
 ]
 
-# ---------------- جدول الأذكار المجدولة ---------------- #
-scheduled_adhkar = [
-    {"time": "08:00", "text": "صباح الخير، لا تنسى أذكار الصباح: سبحان الله وبحمده سبحان الله العظيم"},
-    {"time": "12:00", "text": "ظهرًا: أستغفر الله العظيم وأتوب إليه"},
-    {"time": "18:00", "text": "مساءً: اللهم صل وسلم على نبينا محمد"},
-    {"time": "21:00", "text": "قبل النوم: اللهم اغفر لنا ذنوبنا وكفر عنا سيئاتنا وتوفنا مع الأبرار"}
-]
-
 # ---------------- أوامر المساعدة ---------------- #
 help_text = "الأوامر المتاحة:\n"
 help_text += "1. تسبيح: اكتب 'تسبيح' لمعرفة عدد التسبيحات لكل كلمة\n"
@@ -93,7 +85,7 @@ target_groups = set()
 target_users = set()
 started_sending = False  # للتحكم في بدء إرسال الأذكار
 
-# ---------------- أذكار عشوائية ---------------- #
+# ---------------- أذكار عشوائية كل ساعة ---------------- #
 def send_unique_adhkar():
     adhkar_pool = daily_adhkar.copy()
     while True:
@@ -110,25 +102,23 @@ def send_unique_adhkar():
                 line_bot_api.push_message(user_id, TextSendMessage(text=current_adhkar))
             except:
                 pass
-        time.sleep(30)  # إرسال كل 30 ثانية للاختبار
+        time.sleep(3600)  # تأخير ساعة كاملة قبل الرسالة التالية
 
-# ---------------- أذكار مجدولة ---------------- #
+# ---------------- أذكار مجدولة كل ساعة ---------------- #
 def send_scheduled_adhkar():
     while True:
-        now = time.strftime("%H:%M")
-        for item in scheduled_adhkar:
-            if now == item["time"]:
-                for group_id in list(target_groups):
-                    try:
-                        line_bot_api.push_message(group_id, TextSendMessage(text=item["text"]))
-                    except:
-                        pass
-                for user_id in list(target_users):
-                    try:
-                        line_bot_api.push_message(user_id, TextSendMessage(text=item["text"]))
-                    except:
-                        pass
-        time.sleep(30)  # فحص الوقت كل 30 ثانية
+        current_adhkar = random.choice(daily_adhkar)  # اختيار رسالة عشوائية كل ساعة
+        for group_id in list(target_groups):
+            try:
+                line_bot_api.push_message(group_id, TextSendMessage(text=current_adhkar))
+            except:
+                pass
+        for user_id in list(target_users):
+            try:
+                line_bot_api.push_message(user_id, TextSendMessage(text=current_adhkar))
+            except:
+                pass
+        time.sleep(3600)  # فحص كل ساعة
 
 # ---------------- Webhook ---------------- #
 @app.route("/", methods=["GET"])
@@ -192,7 +182,7 @@ def handle_message(event):
             if tasbih_counts[user_id][user_text] >= tasbih_limits:
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"اكتمل {user_text} ({tasbih_limits} مرة)"))
             else:
-                status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
+                status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله الأكبر']}/33"
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         else:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"{user_text} مكتمل ({tasbih_limits} مرة)"))
