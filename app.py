@@ -87,20 +87,21 @@ def send_daily_adhkar():
             time.sleep(10)
             continue
 
-        remaining = [d for d in daily_adhkar if d not in sent_today]
+        all_adhkar = daily_adhkar + list(specific_duas.values())
+        remaining = [d for d in all_adhkar if d not in sent_today]
         if not remaining:
             sent_today.clear()
-            remaining = daily_adhkar.copy()
+            remaining = all_adhkar.copy()
 
         current_adhkar = random.choice(remaining)
         sent_today.add(current_adhkar)
 
-        for group_id in target_groups:
+        for group_id in list(target_groups):
             try:
                 line_bot_api.push_message(group_id, TextSendMessage(text=current_adhkar))
             except:
                 pass
-        for uid in target_users:
+        for uid in list(target_users):
             try:
                 line_bot_api.push_message(uid, TextSendMessage(text=current_adhkar))
             except:
@@ -108,6 +109,7 @@ def send_daily_adhkar():
 
         time.sleep(3600)  # كل ساعة
 
+# بدء الإرسال التلقائي
 threading.Thread(target=send_daily_adhkar, daemon=True).start()
 
 # ---------------- Webhook ---------------- #
@@ -167,7 +169,7 @@ def handle_message(event):
         if tasbih_counts[user_id][user_text] >= tasbih_limits:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"اكتمل {user_text} ({tasbih_limits} مرة)"))
         else:
-            status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله الأكبر']}/33"
+            status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
 
