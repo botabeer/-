@@ -62,12 +62,14 @@ daily_adhkar = [
 ]
 
 # ---------------- أوامر المساعدة ---------------- #
-help_text = """الأوامر المتاحة:
-1. إرسال دعاء محدد: اكتب اسم الدعاء مثل "دعاء السفر" أو "دعاء الكرب"
-2. تسبيح: اكتب "تسبيح" لمعرفة عدد التسبيحات لكل كلمة
-3. إرسال كلمة من "سبحان الله" أو "الحمد لله" أو "الله أكبر" لزيادة العد
-4. الأذكار اليومية تُرسل تلقائيًا للقروب والخاص
-"""
+help_text = "الأوامر المتاحة:\n"
+help_text += "1. تسبيح: اكتب 'تسبيح' لمعرفة عدد التسبيحات لكل كلمة\n"
+help_text += "2. إرسال كلمة من 'سبحان الله' أو 'الحمد لله' أو 'الله أكبر' لزيادة العدد\n"
+help_text += "3. منع الروابط المكررة\n"
+help_text += "4. الأدعية المحددة:\n"
+
+for dua_name in specific_duas.keys():
+    help_text += f"- {dua_name}\n"
 
 # ---------------- القوائم التلقائية ---------------- #
 target_groups = set()
@@ -90,7 +92,7 @@ def send_unique_adhkar():
                 line_bot_api.push_message(user_id, TextSendMessage(text=current_adhkar))
             except:
                 pass
-        time.sleep(5)  # تأخير قصير للاختبار، يمكن تغييره لساعات لاحقًا
+        time.sleep(5)
 
 threading.Thread(target=send_unique_adhkar, daemon=True).start()
 
@@ -165,9 +167,6 @@ def handle_message(event):
     if user_text.lower() == "مساعدة":
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
-
-    # أي نص آخر لا يرد عليه البوت
-    return
 
 # ---------------- تشغيل السيرفر ---------------- #
 if __name__ == "__main__":
