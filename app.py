@@ -31,15 +31,16 @@ links_count = {}  # عداد الروابط لكل مستخدم
 def handle_links(event, user_text, user_id):
     if re.search(r"(https?://\S+|www\.\S+)", user_text):
         if user_id not in links_count:
-            links_count[user_id] = 1
+            links_count[user_id] = 1  # أول رابط، لا تحذير
+            return True
         else:
             links_count[user_id] += 1
 
-        # تحذير دائم عند كل رابط
-        if links_count[user_id] < 6:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
-        elif links_count[user_id] >= 6:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="سيتم حذفك من الإدارة لتكرار الروابط"))
+            # التحذير يبدأ من المرة الثانية
+            if 2 <= links_count[user_id] < 6:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
+            elif links_count[user_id] >= 6:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="سيتم حذفك من الإدارة لتكرار الروابط"))
         return True
     return False
 
