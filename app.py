@@ -53,19 +53,15 @@ specific_duas = {
 
 # ---------------- أوامر المساعدة ---------------- #
 help_text = """
-╔═══════════════
-      أوامر البوت
-╚═══════════════
+أوامر البوت:
 
-- تسبيح:
-  اكتب 'تسبيح' لمعرفة عدد التسبيحات لكل كلمة
-
-- زيادة التسبيح:
-  أرسل كلمة من 'سبحان الله' أو 'الحمد لله' أو 'الله أكبر'
+- تسبيح: اكتب 'تسبيح' لمعرفة عدد التسبيحات لكل كلمة
+- زيادة التسبيح: أرسل 'سبحان الله' أو 'الحمد لله' أو 'الله أكبر'
 """
 
-target_groups = set()
-target_users = set()
+# ---------------- القوائم ---------------- #
+target_groups = set()  
+target_users = set()   
 sent_today = set()
 
 # ---------------- وظائف ---------------- #
@@ -80,41 +76,37 @@ def handle_links(event, user_text, user_id):
         else:
             links_count[user_id] += 1
             if links_count[user_id] == 2:
-                line_bot_api.reply_message(
-                    event.reply_token,
-                    TextSendMessage(text="الرجاء عدم تكرار الروابط")
-                )
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
             elif links_count[user_id] >= 4:
-                line_bot_api.reply_message(
-                    event.reply_token,
-                    TextSendMessage(text="سيتم حذفك من الإدارة لتكرار الروابط")
-                )
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="سيتم حذفك من الإدارة لتكرار الروابط"))
         return True
     return False
 
 def send_daily_adhkar():
     while True:
         if not target_groups and not target_users:
-            # لا يوجد مستلمين حتى الآن، انتظر 10 ثواني
             time.sleep(10)
             continue
+
         remaining = [d for d in daily_adhkar if d not in sent_today]
         if not remaining:
             sent_today.clear()
             remaining = daily_adhkar.copy()
+
         current_adhkar = random.choice(remaining)
         sent_today.add(current_adhkar)
 
-        for group_id in list(target_groups):
+        for group_id in target_groups:
             try:
                 line_bot_api.push_message(group_id, TextSendMessage(text=current_adhkar))
             except:
                 pass
-        for user_id in list(target_users):
+        for uid in target_users:
             try:
-                line_bot_api.push_message(user_id, TextSendMessage(text=current_adhkar))
+                line_bot_api.push_message(uid, TextSendMessage(text=current_adhkar))
             except:
                 pass
+
         time.sleep(3600)  # كل ساعة
 
 threading.Thread(target=send_daily_adhkar, daemon=True).start()
@@ -148,7 +140,7 @@ def handle_message(event):
     elif hasattr(event.source, 'user_id'):
         target_users.add(event.source.user_id)
 
-    # الرد على المساعدة
+    # المساعدة
     if user_text.strip().lower() == "مساعدة":
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
@@ -158,37 +150,38 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="وعليكم السلام ورحمة الله وبركاته"))
         return
 
+    # حماية الروابط
     if handle_links(event, user_text, user_id):
         return
 
+    # التسبيح
+    ensure_user_counts(user_id)
     if user_text == "تسبيح":
-        ensure_user_counts(user_id)
         counts = tasbih_counts[user_id]
-        status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله الأكبر']}/33"
+        status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
 
     if user_text in ("سبحان الله", "الحمد لله", "الله أكبر"):
-        ensure_user_counts(user_id)
         tasbih_counts[user_id][user_text] += 1
         counts = tasbih_counts[user_id]
         if tasbih_counts[user_id][user_text] >= tasbih_limits:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"اكتمل {user_text} ({tasbih_limits} مرة)"))
         else:
-            status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله الأكبر']}/33"
+            status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
 
-    # أمر المسؤول لإرسال دعاء أو ذكر عشوائي لكل القروبات والمستخدمين
+    # أمر المسؤول لإرسال دعاء/ذكر عشوائي
     if user_id == ADMIN_USER_ID and user_text.lower() == "أرسل للكل":
         all_adhkar = daily_adhkar + list(specific_duas.values())
         random_text = random.choice(all_adhkar)
-        for group_id in list(target_groups):
+        for group_id in target_groups:
             try:
                 line_bot_api.push_message(group_id, TextSendMessage(text=random_text))
             except:
                 pass
-        for uid in list(target_users):
+        for uid in target_users:
             try:
                 line_bot_api.push_message(uid, TextSendMessage(text=random_text))
             except:
