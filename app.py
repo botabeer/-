@@ -51,6 +51,7 @@ specific_duas = {
     "دعاء النجاح": "اللهم وفقني ونجحني في حياتي وحقّق لي ما أحب"
 }
 
+# ---------------- أوامر المساعدة ---------------- #
 help_text = """
 ╔═══════════════
       أوامر البوت
@@ -93,6 +94,10 @@ def handle_links(event, user_text, user_id):
 
 def send_daily_adhkar():
     while True:
+        if not target_groups and not target_users:
+            # لا يوجد مستلمين حتى الآن، انتظر 10 ثواني
+            time.sleep(10)
+            continue
         remaining = [d for d in daily_adhkar if d not in sent_today]
         if not remaining:
             sent_today.clear()
@@ -143,6 +148,11 @@ def handle_message(event):
     elif hasattr(event.source, 'user_id'):
         target_users.add(event.source.user_id)
 
+    # الرد على المساعدة
+    if user_text.strip().lower() == "مساعدة":
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
+        return
+
     # الرد على السلام
     if re.search(r"السلام", user_text, re.IGNORECASE):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="وعليكم السلام ورحمة الله وبركاته"))
@@ -154,7 +164,7 @@ def handle_message(event):
     if user_text == "تسبيح":
         ensure_user_counts(user_id)
         counts = tasbih_counts[user_id]
-        status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
+        status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله الأكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
 
@@ -165,7 +175,7 @@ def handle_message(event):
         if tasbih_counts[user_id][user_text] >= tasbih_limits:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"اكتمل {user_text} ({tasbih_limits} مرة)"))
         else:
-            status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
+            status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله الأكبر']}/33"
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
 
