@@ -7,88 +7,50 @@ import threading
 import random
 import time
 import re
-
-app = Flask(__name__)
+from dotenv import load_dotenv
 
 # ---------------- إعداد البوت ---------------- #
+load_dotenv()
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID")
+PORT = int(os.getenv("PORT", 5000))
 
+app = Flask(__name__)
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # ---------------- بيانات التسبيح ---------------- #
 tasbih_limits = 33
 tasbih_counts = {}
-
-def ensure_user_counts(uid):
-    if uid not in tasbih_counts:
-        tasbih_counts[uid] = {"سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
-
-# ---------------- حماية الروابط ---------------- #
 links_count = {}
 
-def handle_links(event, user_text, user_id):
-    if re.search(r"(https?://\S+|www\.\S+)", user_text):
-        if user_id not in links_count:
-            links_count[user_id] = 1  # أول رابط
-        else:
-            links_count[user_id] += 1
-            if links_count[user_id] == 2:  # التحذير عند المرة الثانية
-                line_bot_api.reply_message(
-                    event.reply_token,
-                    TextSendMessage(text="الرجاء عدم تكرار الروابط")
-                )
-            elif links_count[user_id] >= 4:  # الحذف عند المرة الرابعة
-                line_bot_api.reply_message(
-                    event.reply_token,
-                    TextSendMessage(text="سيتم حذفك من الإدارة لتكرار الروابط")
-                )
-        return True
-    return False
-
-# ---------------- أذكار وأدعية شاملة ---------------- #
+# ---------------- أذكار وأدعية ---------------- #
 daily_adhkar = [
     "اللهم اجعل عملي خالصاً لوجهك واغفر لي ذنوبي",
-    "أستغفر الله العظيم الذي لا إله إلا هو الحي القيوم وأتوب إليه",
+    "أستغفر الله العظيم وأتوب إليه",
     "اللهم اهدني لأحسن الأعمال وارزقني التوفيق",
     "اللهم اجعل قلبي مطمئناً بالإيمان",
-    "اللهم اجعل لي نوراً في قلبي وطمأنينة في نفسي",
-    "اللهم اغفر لوالديّ وارزقهم الفردوس الأعلى واجعلهم من السعداء في الآخرة",
-    "اللهم اجعل والدينا من الذين يُستجاب لهم دعاؤهم واغفر لهم",
-    "اللهم ارحم موتانا وموتى المسلمين واجعل قبورهم روضة من رياض الجنة",
-    "اللهم اغفر لهم وتجاوز عن سيئاتهم وانزلهم منزلاً كريمًا",
-    "اللهم احفظني وأهلي من كل سوء وشر وكن لنا حصناً من كل عين وحسد",
+    "اللهم اغفر لوالديّ وارزقهم الفردوس الأعلى",
+    "اللهم ارحم موتانا وموتى المسلمين واجعل قبورهم روضة",
+    "اللهم احفظني وأهلي من كل سوء وشر",
     "أعوذ بكلمات الله التامات من شر ما خلق",
-    "اللهم اجعلنا من المحصنين بعينك التي لا تنام",
     "اللهم ارزقنا رزقاً حلالاً طيباً واسعاً وبارك لنا فيه",
-    "اللهم اجعلنا من الشاكرين لنعيمك وبارك لنا في رزقنا",
-    "اللهم ارزقني الغنى الحلال ووسع علي رزقي",
-    "اللهم وفقني في دراستي وعمالي وحقق لي الخير",
-    "اللهم اجعلني من الناجحين المتفوقين في كل أموري",
-    "اللهم افتح لي أبواب التوفيق والرزق في حياتي",
+    "اللهم وفقني في حياتي وحقق لي الخير",
     "اللهم احفظ بدني وعقلي وروحي",
     "اللهم اشف مرضانا ومرضى المسلمين",
-    "اللهم اجعلنا من الآمنين من كل بلاء ووباء",
-    "اللهم ارزقني الصبر والرضا بقضائك",
-    "اللهم اجعل قلبي مطمئناً وقريباً منك",
-    "اللهم اجعلني من الذين يستمعون القول فيتبعون أحسنه"
+    "اللهم اجعل قلبي مطمئناً وقريباً منك"
 ]
 
 specific_duas = {
     "دعاء الموتى": "اللهم ارحم موتانا وموتى المسلمين واجعل قبورهم روضة من رياض الجنة",
-    "دعاء الوالدين": "اللهم اغفر لوالديّ وارزقهم الفردوس الأعلى واجعلهم من السعداء في الآخرة",
-    "دعاء النفس": "اللهم اجعل عملي خالصاً لوجهك واغفر لي ذنوبي واهدني لأحسن الأعمال",
-    "دعاء التحصين": "اللهم احفظني وأهلي من كل سوء وشر، وكن لنا حصناً من كل عين وحسد",
-    "دعاء الوقاية": "أعوذ بكلمات الله التامات من شر ما خلق",
+    "دعاء الوالدين": "اللهم اغفر لوالديّ وارزقهم الفردوس الأعلى",
+    "دعاء النفس": "اللهم اجعل عملي خالصاً لوجهك واغفر لي ذنوبي",
+    "دعاء التحصين": "اللهم احفظني وأهلي من كل سوء وشر",
     "دعاء الرزق": "اللهم ارزقنا رزقاً حلالاً طيباً واسعاً وبارك لنا فيه",
-    "دعاء البركة في الرزق": "اللهم اجعلنا من الشاكرين لنعيمك وبارك لنا في رزقنا",
-    "دعاء النجاح": "اللهم وفقني ونجحني في حياتي وحقّق لي ما أحب",
-    "دعاء الصحة": "اللهم احفظ بدني وعقلي وروحي وامنحنا الصحة والسلامة",
-    "دعاء الطمأنينة": "اللهم اجعل قلبي مطمئناً وقريباً منك وارزقني الصبر والرضا"
+    "دعاء النجاح": "اللهم وفقني ونجحني في حياتي وحقّق لي ما أحب"
 }
 
-# ---------------- أوامر المساعدة ---------------- #
 help_text = """
 ╔═══════════════
       أوامر البوت
@@ -101,12 +63,34 @@ help_text = """
   أرسل كلمة من 'سبحان الله' أو 'الحمد لله' أو 'الله أكبر'
 """
 
-# ---------------- القوائم التلقائية ---------------- #
 target_groups = set()
 target_users = set()
 sent_today = set()
 
-# ---------------- إرسال أذكار وأدعية تلقائية ---------------- #
+# ---------------- وظائف ---------------- #
+def ensure_user_counts(uid):
+    if uid not in tasbih_counts:
+        tasbih_counts[uid] = {"سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
+
+def handle_links(event, user_text, user_id):
+    if re.search(r"(https?://\S+|www\.\S+)", user_text):
+        if user_id not in links_count:
+            links_count[user_id] = 1
+        else:
+            links_count[user_id] += 1
+            if links_count[user_id] == 2:
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="الرجاء عدم تكرار الروابط")
+                )
+            elif links_count[user_id] >= 4:
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="سيتم حذفك من الإدارة لتكرار الروابط")
+                )
+        return True
+    return False
+
 def send_daily_adhkar():
     while True:
         remaining = [d for d in daily_adhkar if d not in sent_today]
@@ -154,7 +138,6 @@ def handle_message(event):
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
-    # حفظ القروبات والمستخدمين تلقائيًا
     if hasattr(event.source, 'group_id'):
         target_groups.add(event.source.group_id)
     elif hasattr(event.source, 'user_id'):
@@ -165,11 +148,9 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="وعليكم السلام ورحمة الله وبركاته"))
         return
 
-    # حماية الروابط
     if handle_links(event, user_text, user_id):
         return
 
-    # التسبيح
     if user_text == "تسبيح":
         ensure_user_counts(user_id)
         counts = tasbih_counts[user_id]
@@ -179,8 +160,7 @@ def handle_message(event):
 
     if user_text in ("سبحان الله", "الحمد لله", "الله أكبر"):
         ensure_user_counts(user_id)
-        if tasbih_counts[user_id][user_text] < tasbih_counts:
-            tasbih_counts[user_id][user_text] += 1
+        tasbih_counts[user_id][user_text] += 1
         counts = tasbih_counts[user_id]
         if tasbih_counts[user_id][user_text] >= tasbih_limits:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"اكتمل {user_text} ({tasbih_limits} مرة)"))
@@ -189,8 +169,8 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
 
-    # أمر إرسال دعاء أو ذكر عشوائي لكل القروبات والمستخدمين
-    if user_text.lower() == "أرسل للكل":
+    # أمر المسؤول لإرسال دعاء أو ذكر عشوائي لكل القروبات والمستخدمين
+    if user_id == ADMIN_USER_ID and user_text.lower() == "أرسل للكل":
         all_adhkar = daily_adhkar + list(specific_duas.values())
         random_text = random.choice(all_adhkar)
         for group_id in list(target_groups):
@@ -204,3 +184,6 @@ def handle_message(event):
             except:
                 pass
         return
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=PORT)
