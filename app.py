@@ -1,4 +1,4 @@
-from flask import Flask, request, abort
+from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
@@ -26,7 +26,8 @@ def ensure_user_counts(uid):
         tasbih_counts[uid] = {"سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
 
 # ---------------- حماية الروابط ---------------- #
-links_count = {}  # عداد الروابط لكل مستخدم
+links_count = {}
+
 def contains_link(text):
     url_pattern = r"(https?://\S+|www\.\S+)"
     return re.search(url_pattern, text)
@@ -70,6 +71,7 @@ help_text += "3. منع الروابط المكررة\n"
 # ---------------- القوائم التلقائية ---------------- #
 target_groups = set()
 target_users = set()
+started_sending = False  # للتحكم في بدء إرسال الأذكار
 
 # ---------------- أذكار تلقائية بدون تكرار ---------------- #
 def send_unique_adhkar():
@@ -88,9 +90,7 @@ def send_unique_adhkar():
                 line_bot_api.push_message(user_id, TextSendMessage(text=current_adhkar))
             except:
                 pass
-        time.sleep(5)
-
-threading.Thread(target=send_unique_adhkar, daemon=True).start()
+        time.sleep(3600)  # إرسال كل ساعة
 
 # ---------------- Webhook ---------------- #
 @app.route("/", methods=["GET"])
@@ -113,6 +113,7 @@ def handle_async(body, signature):
 # ---------------- معالجة الرسائل ---------------- #
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
+    global started_sending
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
@@ -122,8 +123,13 @@ def handle_message(event):
     elif hasattr(event.source, 'user_id'):
         target_users.add(event.source.user_id)
 
-    # الرد على السلام
-    if re.search(r"\bسلام\b", user_text):
+    # تشغيل Thread إرسال الأذكار عند استقبال أول رسالة
+    if not started_sending:
+        threading.Thread(target=send_unique_adhkar, daemon=True).start()
+        started_sending = True
+
+    # الرد على جميع أشكال السلام
+    if re.search(r"السلام", user_text, re.IGNORECASE):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="وعليكم السلام ورحمة الله وبركاته"))
         return
 
@@ -156,7 +162,7 @@ def handle_message(event):
                 status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         else:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"{user_text} مكتمل ({tasbih_limits} مرة)"))
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"{user_text} مكتمل ({tasbih_limits} مرة"))
         return
 
     # الأدعية المحددة
