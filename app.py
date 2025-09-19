@@ -35,8 +35,6 @@ def handle_links(event, user_text, user_id):
             return True
         else:
             links_count[user_id] += 1
-
-            # التحذير يبدأ من المرة الثانية
             if 2 <= links_count[user_id] < 6:
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
             elif links_count[user_id] >= 6:
@@ -83,7 +81,6 @@ help_text += "3. منع الروابط المكررة\n"
 # ---------------- القوائم التلقائية ---------------- #
 target_groups = set()
 target_users = set()
-started_sending = False  # للتحكم في بدء إرسال الأذكار
 
 # ---------------- أذكار عشوائية كل ساعة ---------------- #
 def send_unique_adhkar():
@@ -102,12 +99,12 @@ def send_unique_adhkar():
                 line_bot_api.push_message(user_id, TextSendMessage(text=current_adhkar))
             except:
                 pass
-        time.sleep(3600)  # تأخير ساعة كاملة قبل الرسالة التالية
+        time.sleep(3600)  # كل ساعة
 
 # ---------------- أذكار مجدولة كل ساعة ---------------- #
 def send_scheduled_adhkar():
     while True:
-        current_adhkar = random.choice(daily_adhkar)  # اختيار رسالة عشوائية كل ساعة
+        current_adhkar = random.choice(daily_adhkar)
         for group_id in list(target_groups):
             try:
                 line_bot_api.push_message(group_id, TextSendMessage(text=current_adhkar))
@@ -118,7 +115,11 @@ def send_scheduled_adhkar():
                 line_bot_api.push_message(user_id, TextSendMessage(text=current_adhkar))
             except:
                 pass
-        time.sleep(3600)  # فحص كل ساعة
+        time.sleep(3600)  # كل ساعة
+
+# ---------------- تشغيل الأذكار مباشرة عند تشغيل البوت ---------------- #
+threading.Thread(target=send_unique_adhkar, daemon=True).start()
+threading.Thread(target=send_scheduled_adhkar, daemon=True).start()
 
 # ---------------- Webhook ---------------- #
 @app.route("/", methods=["GET"])
@@ -141,7 +142,6 @@ def handle_async(body, signature):
 # ---------------- معالجة الرسائل ---------------- #
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    global started_sending
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
@@ -150,12 +150,6 @@ def handle_message(event):
         target_groups.add(event.source.group_id)
     elif hasattr(event.source, 'user_id'):
         target_users.add(event.source.user_id)
-
-    # تشغيل Threads الأذكار عند استقبال أول رسالة
-    if not started_sending:
-        threading.Thread(target=send_unique_adhkar, daemon=True).start()
-        threading.Thread(target=send_scheduled_adhkar, daemon=True).start()
-        started_sending = True
 
     # الرد على جميع أشكال السلام
     if re.search(r"السلام", user_text, re.IGNORECASE):
@@ -182,7 +176,7 @@ def handle_message(event):
             if tasbih_counts[user_id][user_text] >= tasbih_limits:
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"اكتمل {user_text} ({tasbih_limits} مرة)"))
             else:
-                status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله الأكبر']}/33"
+                status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         else:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"{user_text} مكتمل ({tasbih_limits} مرة)"))
