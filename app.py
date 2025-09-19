@@ -26,11 +26,22 @@ def ensure_user_counts(uid):
         tasbih_counts[uid] = {"سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
 
 # ---------------- حماية الروابط ---------------- #
-links_count = {}
+links_count = {}  # عداد الروابط لكل مستخدم
 
-def contains_link(text):
-    url_pattern = r"(https?://\S+|www\.\S+)"
-    return re.search(url_pattern, text)
+def handle_links(event, user_text, user_id):
+    if re.search(r"(https?://\S+|www\.\S+)", user_text):
+        if user_id not in links_count:
+            links_count[user_id] = 1
+        else:
+            links_count[user_id] += 1
+
+        # تحذير دائم عند كل رابط
+        if links_count[user_id] < 6:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
+        elif links_count[user_id] >= 6:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="سيتم حذفك من الإدارة لتكرار الروابط"))
+        return True
+    return False
 
 # ---------------- الأدعية المحددة ---------------- #
 specific_duas = {
@@ -62,6 +73,14 @@ daily_adhkar = [
     "اللهم اغفر لنا ذنوبنا وكفر عنا سيئاتنا وتوفنا مع الأبرار"
 ]
 
+# ---------------- جدول الأذكار المجدولة ---------------- #
+scheduled_adhkar = [
+    {"time": "08:00", "text": "صباح الخير، لا تنسى أذكار الصباح: سبحان الله وبحمده سبحان الله العظيم"},
+    {"time": "12:00", "text": "ظهرًا: أستغفر الله العظيم وأتوب إليه"},
+    {"time": "18:00", "text": "مساءً: اللهم صل وسلم على نبينا محمد"},
+    {"time": "21:00", "text": "قبل النوم: اللهم اغفر لنا ذنوبنا وكفر عنا سيئاتنا وتوفنا مع الأبرار"}
+]
+
 # ---------------- أوامر المساعدة ---------------- #
 help_text = "الأوامر المتاحة:\n"
 help_text += "1. تسبيح: اكتب 'تسبيح' لمعرفة عدد التسبيحات لكل كلمة\n"
@@ -73,7 +92,7 @@ target_groups = set()
 target_users = set()
 started_sending = False  # للتحكم في بدء إرسال الأذكار
 
-# ---------------- أذكار تلقائية بدون تكرار ---------------- #
+# ---------------- أذكار عشوائية ---------------- #
 def send_unique_adhkar():
     adhkar_pool = daily_adhkar.copy()
     while True:
@@ -90,7 +109,25 @@ def send_unique_adhkar():
                 line_bot_api.push_message(user_id, TextSendMessage(text=current_adhkar))
             except:
                 pass
-        time.sleep(3600)  # إرسال كل ساعة
+        time.sleep(30)  # إرسال كل 30 ثانية للاختبار
+
+# ---------------- أذكار مجدولة ---------------- #
+def send_scheduled_adhkar():
+    while True:
+        now = time.strftime("%H:%M")
+        for item in scheduled_adhkar:
+            if now == item["time"]:
+                for group_id in list(target_groups):
+                    try:
+                        line_bot_api.push_message(group_id, TextSendMessage(text=item["text"]))
+                    except:
+                        pass
+                for user_id in list(target_users):
+                    try:
+                        line_bot_api.push_message(user_id, TextSendMessage(text=item["text"]))
+                    except:
+                        pass
+        time.sleep(30)  # فحص الوقت كل 30 ثانية
 
 # ---------------- Webhook ---------------- #
 @app.route("/", methods=["GET"])
@@ -123,9 +160,10 @@ def handle_message(event):
     elif hasattr(event.source, 'user_id'):
         target_users.add(event.source.user_id)
 
-    # تشغيل Thread إرسال الأذكار عند استقبال أول رسالة
+    # تشغيل Threads الأذكار عند استقبال أول رسالة
     if not started_sending:
         threading.Thread(target=send_unique_adhkar, daemon=True).start()
+        threading.Thread(target=send_scheduled_adhkar, daemon=True).start()
         started_sending = True
 
     # الرد على جميع أشكال السلام
@@ -134,13 +172,7 @@ def handle_message(event):
         return
 
     # حماية الروابط
-    if re.search(r"(https?://\S+|www\.\S+)", user_text):
-        if user_id not in links_count:
-            links_count[user_id] = 1
-        else:
-            if links_count[user_id] == 1:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
-            links_count[user_id] = 2
+    if handle_links(event, user_text, user_id):
         return
 
     # تسبيح
@@ -162,7 +194,7 @@ def handle_message(event):
                 status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         else:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"{user_text} مكتمل ({tasbih_limits} مرة"))
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"{user_text} مكتمل ({tasbih_limits} مرة)"))
         return
 
     # الأدعية المحددة
