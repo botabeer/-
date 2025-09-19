@@ -234,6 +234,19 @@ def handle_message(event):
 
     # أي نص آخر نتجاهله (لا نرد)
     return
-
+# الروابط المكررة
+if "http" in text or "https" in text:
+    if user_id not in links_count:
+        links_count[user_id] = 1  # أول رابط
+    else:
+        if links_count[user_id] < 2:
+            links_count[user_id] += 1
+        if links_count[user_id] == 2:  # فقط عند التكرار الثاني
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="الرجاء عدم تكرار الروابط")
+            )
+    return
+    
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
