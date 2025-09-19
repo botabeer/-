@@ -1,18 +1,83 @@
-# إضافة هذا أعلى الكود قبل استخدامه
+from flask import Flask, request, abort
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
+import os
+import threading
+import random
+
+app = Flask(__name__)
+
+# قراءة القيم من متغيرات البيئة
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+
+# تهيئة البوت
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
+# ---------------- بيانات البوت ---------------- #
+subscribers = set()
+auto_reminder_enabled = True
+tasbih_limits = 33
+tasbih_counts = {}  # { user_id: {"سبحان الله": n, "الحمد لله": m, "الله أكبر": k} }
 links_count = {}  # عداد الروابط لكل مستخدم
 
+def ensure_user_counts(uid):
+    if uid not in tasbih_counts:
+        tasbih_counts[uid] = {"سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
+
+# النصوص الأساسية (مقتطفات لتوضيح المثال)
+AZKAR_SABAH = "أذكار الصباح..."
+AZKAR_MASAA = "أذكار المساء..."
+AZKAR_NAWM = "أذكار النوم..."
+AYAT_KURSI = "آية الكرسي..."
+DUA_LIST = ["دعاء 1", "دعاء 2", "دعاء 3"]
+HADITH_LIST = ["حديث 1", "حديث 2", "حديث 3"]
+
+HELP_TEXT = """الأوامر المتاحة:
+صباح - أذكار الصباح
+مساء - أذكار المساء
+نوم - أذكار النوم
+آية - آية الكرسي
+دعاء - دعاء عشوائي
+حديث - حديث عشوائي
+تسبيح - بدء عداد التسبيح
+تشغيل - تفعيل التذكير التلقائي
+إيقاف - إيقاف التذكير التلقائي
+مساعدة - عرض هذه القائمة
+"""
+
+# ---------------- Flask Routes ---------------- #
+@app.route("/", methods=["GET"])
+def home():
+    return "Bot is running", 200
+
+@app.route("/callback", methods=["POST"])
+def callback():
+    signature = request.headers.get("X-Line-Signature", "")
+    body = request.get_data(as_text=True)
+    threading.Thread(target=handle_async, args=(body, signature)).start()
+    return "OK", 200
+
+def handle_async(body, signature):
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError:
+        print("خطأ في التوقيع")
+
+# ---------------- معالجة الرسائل ---------------- #
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    global auto_reminder_enabled
     user_id = event.source.user_id
     text = event.message.text.strip()
 
-    # الروابط المكررة — وضعها في البداية أو بعد أوامر محددة
+    # حماية الروابط المكررة
     if "http" in text or "https" in text:
         if user_id not in links_count:
             links_count[user_id] = 1  # أول رابط
         else:
-            if links_count[user_id] == 1:  # إذا هذه المرة الثانية
+            if links_count[user_id] == 1:  # التحذير عند المرة الثانية
                 line_bot_api.reply_message(
                     event.reply_token,
                     TextSendMessage(text="الرجاء عدم تكرار الروابط")
@@ -20,7 +85,7 @@ def handle_message(event):
             links_count[user_id] = 2  # بعد التحذير، الثبات على 2 لتجنب التكرار
         return
 
-    # أوامر محددة فقط — يتجاهل أي نص آخر
+    # أوامر البوت
     if text == "مساعدة":
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=HELP_TEXT))
         return
@@ -50,7 +115,6 @@ def handle_message(event):
         subscribers.discard(user_id)
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف التذكير التلقائي"))
         return
-    # تسبيح: بدء أو زيادة حسب العبارة
     if text == "تسبيح":
         ensure_user_counts(user_id)
         counts = tasbih_counts[user_id]
@@ -71,5 +135,10 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"{text} مكتمل ({tasbih_limits} مرة)"))
         return
 
-    # أي نص آخر نتجاهله (لا نرد)
+    # أي نص آخر نتجاهله
     return
+
+# ---------------- تشغيل Flask ---------------- #
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
