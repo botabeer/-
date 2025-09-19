@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 load_dotenv()
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
-ADMIN_USER_ID = os.getenv("ADMIN_USER_ID")
 PORT = int(os.getenv("PORT", 5000))
 
 app = Flask(__name__)
@@ -60,8 +59,8 @@ help_text = """
 """
 
 # ---------------- القوائم ---------------- #
-target_groups = set()  
-target_users = set()   
+target_groups = set()
+target_users = set()
 sent_today = set()
 
 # ---------------- وظائف ---------------- #
@@ -168,12 +167,12 @@ def handle_message(event):
         if tasbih_counts[user_id][user_text] >= tasbih_limits:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"اكتمل {user_text} ({tasbih_limits} مرة)"))
         else:
-            status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
+            status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله الأكبر']}/33"
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
 
-    # أمر المسؤول لإرسال دعاء/ذكر عشوائي
-    if user_id == ADMIN_USER_ID and user_text.lower() == "أرسل للكل":
+    # أي شخص يرسل "أرسل للكل"
+    if user_text.lower() == "أرسل للكل":
         all_adhkar = daily_adhkar + list(specific_duas.values())
         random_text = random.choice(all_adhkar)
         for group_id in target_groups:
