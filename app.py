@@ -1,7 +1,7 @@
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage, SourceGroup, SourceUser
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import os
 import threading
 import random
@@ -66,10 +66,6 @@ help_text = "الأوامر المتاحة:\n"
 help_text += "1. تسبيح: اكتب 'تسبيح' لمعرفة عدد التسبيحات لكل كلمة\n"
 help_text += "2. إرسال كلمة من 'سبحان الله' أو 'الحمد لله' أو 'الله أكبر' لزيادة العدد\n"
 help_text += "3. منع الروابط المكررة\n"
-help_text += "4. الأدعية المحددة:\n"
-
-for dua_name in specific_duas.keys():
-    help_text += f"- {dua_name}\n"
 
 # ---------------- القوائم التلقائية ---------------- #
 target_groups = set()
@@ -126,8 +122,13 @@ def handle_message(event):
     elif hasattr(event.source, 'user_id'):
         target_users.add(event.source.user_id)
 
+    # الرد على السلام
+    if re.search(r"\bسلام\b", user_text):
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="وعليكم السلام ورحمة الله وبركاته"))
+        return
+
     # حماية الروابط
-    if contains_link(user_text):
+    if re.search(r"(https?://\S+|www\.\S+)", user_text):
         if user_id not in links_count:
             links_count[user_id] = 1
         else:
