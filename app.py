@@ -43,6 +43,14 @@ def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+# ---------------- بيانات التسبيح ---------------- #
+tasbih_limits = 33
+tasbih_counts = {}
+
+def ensure_user_counts(uid):
+    if uid not in tasbih_counts:
+        tasbih_counts[uid] = {"سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
+
 # ---------------- حماية الروابط ---------------- #
 links_count = {}
 
@@ -68,7 +76,6 @@ def handle_links(event, user_text, user_id):
                     TextSendMessage(text="⚠️ الرجاء عدم تكرار الروابط")
                 )
             elif links_count[user_id] >= 4:
-                # حذف المستخدم من القوائم
                 if user_id in target_users:
                     target_users.remove(user_id)
                 if hasattr(event.source, "group_id") and event.source.group_id in target_groups:
@@ -87,7 +94,6 @@ def handle_links(event, user_text, user_id):
 daily_adhkar = [
     "اللهم اجعل عملي خالصاً لوجهك واغفر لي ذنوبي",
     "أستغفر الله العظيم وأتوب إليه",
-    "اللهم اهدني لأحسن الأعمال وارزقني التوفيق",
     "اللهم اجعل قلبي مطمئناً بالإيمان",
     "اللهم اغفر لوالديّ وارزقهم الفردوس الأعلى",
     "اللهم ارحم موتانا وموتى المسلمين واجعل قبورهم روضة",
@@ -108,6 +114,16 @@ specific_duas = {
     "دعاء الرزق": "اللهم ارزقنا رزقاً حلالاً طيباً واسعاً وبارك لنا فيه",
     "دعاء النجاح": "اللهم وفقني ونجحني في حياتي وحقّق لي ما أحب"
 }
+
+# ---------------- أوامر المساعدة ---------------- #
+help_text = """
+أوامر البوت:
+
+- مساعدة: لعرض الأوامر
+- تسبيح: لمعرفة عدد التسبيحات لكل كلمة
+- سبحان الله / الحمد لله / الله أكبر: زيادة العد
+- أرسل للكل: إرسال دعاء/ذكر للجميع
+"""
 
 # ---------------- القوائم ---------------- #
 target_groups, target_users = load_data()
@@ -153,14 +169,11 @@ def home():
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
-    threading.Thread(target=handle_async, args=(body, signature)).start()
-    return "OK", 200
-
-def handle_async(body, signature):
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        print("خطأ في التوقيع")
+        print("❌ خطأ في التوقيع (تحقق من LINE_CHANNEL_SECRET)")
+    return "OK", 200
 
 # ---------------- معالجة الرسائل ---------------- #
 @handler.add(MessageEvent, message=TextMessage)
@@ -176,16 +189,39 @@ def handle_message(event):
         target_users.add(event.source.user_id)
         save_data()
 
-    # رد السلام
-    if re.search(r"السلام", user_text, re.IGNORECASE):
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="وعليكم السلام ورحمة الله وبركاته"))
+    # الرد على السلام
+    if "السلام" in user_text:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="وعليكم السلام ورحمة الله وبركاته 🤍"))
+        return
+
+    # المساعدة
+    if user_text.strip().lower() == "مساعدة":
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
 
     # حماية الروابط
     if handle_links(event, user_text, user_id):
         return
 
-    # أمر إرسال للكل
+    # التسبيح
+    ensure_user_counts(user_id)
+    if user_text == "تسبيح":
+        counts = tasbih_counts[user_id]
+        status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
+        return
+
+    if user_text in ("سبحان الله", "الحمد لله", "الله أكبر"):
+        tasbih_counts[user_id][user_text] += 1
+        counts = tasbih_counts[user_id]
+        if tasbih_counts[user_id][user_text] >= tasbih_limits:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"اكتمل {user_text} ({tasbih_limits} مرة)"))
+        else:
+            status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
+        return
+
+    # أرسل للكل
     if user_text.lower() == "أرسل للكل":
         all_adhkar = daily_adhkar + list(specific_duas.values())
         random_text = random.choice(all_adhkar)
