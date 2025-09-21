@@ -117,12 +117,16 @@ specific_duas = {
 
 # ---------------- أوامر المساعدة ---------------- #
 help_text = """
-أوامر البوت:
+أوامر البوت المتاحة:
 
-- مساعدة: لعرض الأوامر
-- تسبيح: لمعرفة عدد التسبيحات لكل كلمة
-- سبحان الله / الحمد لله / الله أكبر: زيادة العد
-- الرد على السلام: أي رسالة تحتوي "السلام" يرد عليها
+1. مساعدة
+   - عرض قائمة الأوامر الحالية.
+
+2. تسبيح
+   - لعرض عدد التسبيحات لكل كلمة لكل مستخدم.
+
+3. سبحان الله / الحمد لله / الله أكبر
+   - زيادة عدد التسبيحات لكل كلمة (يحسب لك حتى 33 لكل كلمة).
 """
 
 # ---------------- القوائم ---------------- #
@@ -169,7 +173,6 @@ def callback():
 def handle_message(event):
     user_text = event.message.text.strip()
     user_id = event.source.user_id
-    today = datetime.now().strftime("%Y-%m-%d")
 
     # تخزين القروبات/المستخدمين
     target_id = None
@@ -182,14 +185,14 @@ def handle_message(event):
         target_users.add(target_id)
         save_data()
 
-    # الرد على السلام
-    if "السلام" in user_text:
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="وعليكم السلام ورحمة الله وبركاته"))
-        return
-
     # المساعدة
     if user_text.strip().lower() == "مساعدة":
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
+        return
+
+    # الرد على السلام
+    if "السلام" in user_text:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="وعليكم السلام ورحمة الله وبركاته"))
         return
 
     # حماية الروابط
