@@ -7,6 +7,7 @@ import threading
 import random
 import time
 import re
+import json
 from dotenv import load_dotenv
 
 # ---------------- إعداد البوت ---------------- #
@@ -19,10 +20,68 @@ app = Flask(__name__)
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# ---------------- بيانات التسبيح ---------------- #
-tasbih_limits = 33
-tasbih_counts = {}
+# ---------------- ملف التخزين ---------------- #
+DATA_FILE = "data.json"
+
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump({"groups": [], "users": []}, f, ensure_ascii=False, indent=2)
+        return set(), set()
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return set(data.get("groups", [])), set(data.get("users", []))
+    except:
+        return set(), set()
+
+def save_data():
+    data = {
+        "groups": list(target_groups),
+        "users": list(target_users)
+    }
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+# ---------------- حماية الروابط ---------------- #
 links_count = {}
+
+def reset_links_count():
+    """تصفير العدادات كل 24 ساعة"""
+    global links_count
+    while True:
+        time.sleep(86400)
+        links_count = {}
+
+threading.Thread(target=reset_links_count, daemon=True).start()
+
+def handle_links(event, user_text, user_id):
+    if re.search(r"(https?://\S+|www\.\S+)", user_text):
+        if user_id not in links_count:
+            links_count[user_id] = 1
+        else:
+            links_count[user_id] += 1
+
+            if links_count[user_id] == 2:
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="⚠️ الرجاء عدم تكرار الروابط")
+                )
+            elif links_count[user_id] >= 4:
+                # حذف المستخدم من القوائم
+                if user_id in target_users:
+                    target_users.remove(user_id)
+                if hasattr(event.source, "group_id") and event.source.group_id in target_groups:
+                    target_groups.remove(event.source.group_id)
+
+                save_data()
+
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="🚫 تم حذفك بسبب تكرار الروابط")
+                )
+        return True
+    return False
 
 # ---------------- أذكار وأدعية ---------------- #
 daily_adhkar = [
@@ -50,37 +109,11 @@ specific_duas = {
     "دعاء النجاح": "اللهم وفقني ونجحني في حياتي وحقّق لي ما أحب"
 }
 
-# ---------------- أوامر المساعدة ---------------- #
-help_text = """
-أوامر البوت:
-
-- تسبيح: اكتب 'تسبيح' لمعرفة عدد التسبيحات لكل كلمة
-- زيادة التسبيح: أرسل 'سبحان الله' أو 'الحمد لله' أو 'الله أكبر'
-"""
-
 # ---------------- القوائم ---------------- #
-target_groups = set()
-target_users = set()
+target_groups, target_users = load_data()
 sent_today = set()
 
-# ---------------- وظائف ---------------- #
-def ensure_user_counts(uid):
-    if uid not in tasbih_counts:
-        tasbih_counts[uid] = {"سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
-
-def handle_links(event, user_text, user_id):
-    if re.search(r"(https?://\S+|www\.\S+)", user_text):
-        if user_id not in links_count:
-            links_count[user_id] = 1
-        else:
-            links_count[user_id] += 1
-            if links_count[user_id] == 2:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
-            elif links_count[user_id] >= 4:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="سيتم حذفك من الإدارة لتكرار الروابط"))
-        return True
-    return False
-
+# ---------------- إرسال تلقائي ---------------- #
 def send_daily_adhkar():
     while True:
         if not target_groups and not target_users:
@@ -107,9 +140,8 @@ def send_daily_adhkar():
             except:
                 pass
 
-        time.sleep(3600)  # كل ساعة
+        time.sleep(3600)
 
-# بدء الإرسال التلقائي
 threading.Thread(target=send_daily_adhkar, daemon=True).start()
 
 # ---------------- Webhook ---------------- #
@@ -136,17 +168,15 @@ def handle_message(event):
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
+    # تخزين القروبات والمستخدمين
     if hasattr(event.source, 'group_id'):
         target_groups.add(event.source.group_id)
+        save_data()
     elif hasattr(event.source, 'user_id'):
         target_users.add(event.source.user_id)
+        save_data()
 
-    # المساعدة
-    if user_text.strip().lower() == "مساعدة":
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
-        return
-
-    # الرد على السلام
+    # رد السلام
     if re.search(r"السلام", user_text, re.IGNORECASE):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="وعليكم السلام ورحمة الله وبركاته"))
         return
@@ -155,25 +185,7 @@ def handle_message(event):
     if handle_links(event, user_text, user_id):
         return
 
-    # التسبيح
-    ensure_user_counts(user_id)
-    if user_text == "تسبيح":
-        counts = tasbih_counts[user_id]
-        status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-        return
-
-    if user_text in ("سبحان الله", "الحمد لله", "الله أكبر"):
-        tasbih_counts[user_id][user_text] += 1
-        counts = tasbih_counts[user_id]
-        if tasbih_counts[user_id][user_text] >= tasbih_limits:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"اكتمل {user_text} ({tasbih_limits} مرة)"))
-        else:
-            status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-        return
-
-    # أي شخص يرسل "أرسل للكل"
+    # أمر إرسال للكل
     if user_text.lower() == "أرسل للكل":
         all_adhkar = daily_adhkar + list(specific_duas.values())
         random_text = random.choice(all_adhkar)
