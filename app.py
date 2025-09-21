@@ -55,7 +55,6 @@ def ensure_user_counts(uid):
 links_count = {}
 
 def reset_links_count():
-    """تصفير العدادات كل 24 ساعة"""
     global links_count
     while True:
         time.sleep(86400)
@@ -128,6 +127,23 @@ help_text = """
 # ---------------- القوائم ---------------- #
 target_groups, target_users = load_data()
 sent_today = set()
+
+# ---------------- رسالة تشغيل البوت ---------------- #
+def send_startup_message():
+    all_adhkar = daily_adhkar + list(specific_duas.values())
+    random_text = random.choice(all_adhkar)
+    for group_id in target_groups:
+        try:
+            line_bot_api.push_message(group_id, TextSendMessage(text=f"📢 تشغيل البوت: {random_text}"))
+        except:
+            pass
+    for uid in target_users:
+        try:
+            line_bot_api.push_message(uid, TextSendMessage(text=f"📢 تشغيل البوت: {random_text}"))
+        except:
+            pass
+
+threading.Thread(target=send_startup_message, daemon=True).start()
 
 # ---------------- إرسال تلقائي ---------------- #
 def send_daily_adhkar():
