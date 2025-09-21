@@ -72,7 +72,7 @@ def handle_links(event, user_text, user_id):
             if links_count[user_id] == 2:
                 line_bot_api.reply_message(
                     event.reply_token,
-                    TextSendMessage(text="⚠️ الرجاء عدم تكرار الروابط")
+                    TextSendMessage(text="الرجاء عدم تكرار الروابط")
                 )
             elif links_count[user_id] >= 4:
                 if user_id in target_users:
@@ -84,7 +84,7 @@ def handle_links(event, user_text, user_id):
 
                 line_bot_api.reply_message(
                     event.reply_token,
-                    TextSendMessage(text="🚫 تم حذفك بسبب تكرار الروابط")
+                    TextSendMessage(text="تم حذفك بسبب تكرار الروابط")
                 )
         return True
     return False
@@ -134,13 +134,13 @@ def send_startup_message():
     
     for group_id in target_groups:
         try:
-            line_bot_api.push_message(group_id, TextSendMessage(text=f"📢 تشغيل البوت: {random_text}"))
+            line_bot_api.push_message(group_id, TextSendMessage(text=f"تشغيل البوت: {random_text}"))
         except Exception as e:
             print("Error sending to group:", e)
     
     for uid in target_users:
         try:
-            line_bot_api.push_message(uid, TextSendMessage(text=f"📢 تشغيل البوت: {random_text}"))
+            line_bot_api.push_message(uid, TextSendMessage(text=f"تشغيل البوت: {random_text}"))
         except Exception as e:
             print("Error sending to user:", e)
 
@@ -189,7 +189,7 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        print("❌ خطأ في التوقيع (تحقق من LINE_CHANNEL_SECRET)")
+        print("خطأ في التوقيع")
     return "OK", 200
 
 # ---------------- معالجة الرسائل ---------------- #
@@ -222,14 +222,14 @@ def handle_message(event):
         try:
             line_bot_api.push_message(
                 target_id,
-                TextSendMessage(text=f"📢 مرحباً! {random_text}")
+                TextSendMessage(text=f"مرحبا، {random_text}")
             )
         except Exception as e:
             print("Error sending startup message to new user/group:", e)
 
     # الرد على السلام
     if "السلام" in user_text:
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="وعليكم السلام ورحمة الله وبركاته 🤍"))
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="وعليكم السلام ورحمة الله وبركاته"))
         return
 
     # المساعدة
