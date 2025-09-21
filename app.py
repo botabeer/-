@@ -122,41 +122,30 @@ help_text = """
 - مساعدة: لعرض الأوامر
 - تسبيح: لمعرفة عدد التسبيحات لكل كلمة
 - سبحان الله / الحمد لله / الله أكبر: زيادة العد
+- الرد على السلام: أي رسالة تحتوي "السلام" يرد عليها
 """
 
 # ---------------- القوائم ---------------- #
 target_groups, target_users = load_data()
-sent_today = set()
-last_sent = {}  # تخزين آخر يوم أرسل فيه دعاء لكل ID
+last_sent = {}  # تخزين آخر وقت أرسل فيه دعاء لكل ID
 
-# ---------------- إرسال تلقائي كل ساعة ---------------- #
+# ---------------- إرسال تلقائي خمس مرات يوميًا ---------------- #
 def send_daily_adhkar():
     while True:
-        if not target_groups and not target_users:
+        all_ids = list(target_groups) + list(target_users)
+        if not all_ids:
             time.sleep(10)
             continue
 
         all_adhkar = daily_adhkar + list(specific_duas.values())
-        remaining = [d for d in all_adhkar if d not in sent_today]
-        if not remaining:
-            sent_today.clear()
-            remaining = all_adhkar.copy()
-
-        current_adhkar = random.choice(remaining)
-        sent_today.add(current_adhkar)
-
-        for group_id in list(target_groups):
-            try:
-                line_bot_api.push_message(group_id, TextSendMessage(text=current_adhkar))
-            except:
-                pass
-        for uid in list(target_users):
-            try:
-                line_bot_api.push_message(uid, TextSendMessage(text=current_adhkar))
-            except:
-                pass
-
-        time.sleep(3600)
+        for _ in range(5):  # 5 مرات يومياً
+            current_adhkar = random.choice(all_adhkar)
+            for target_id in all_ids:
+                try:
+                    line_bot_api.push_message(target_id, TextSendMessage(text=current_adhkar))
+                except:
+                    pass
+            time.sleep(86400 / 5)  # تقسيم اليوم على 5 مرات
 
 threading.Thread(target=send_daily_adhkar, daemon=True).start()
 
@@ -192,16 +181,6 @@ def handle_message(event):
         target_id = event.source.user_id
         target_users.add(target_id)
         save_data()
-
-    # إرسال دعاء مرة وحدة في اليوم لكل ID
-    if target_id:
-        if last_sent.get(target_id) != today:
-            random_text = random.choice(daily_adhkar + list(specific_duas.values()))
-            try:
-                line_bot_api.push_message(target_id, TextSendMessage(text=random_text))
-                last_sent[target_id] = today
-            except Exception as e:
-                print("Error sending adhkar:", e)
 
     # الرد على السلام
     if "السلام" in user_text:
