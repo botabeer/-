@@ -121,27 +121,28 @@ help_text = """
 - مساعدة: لعرض الأوامر
 - تسبيح: لمعرفة عدد التسبيحات لكل كلمة
 - سبحان الله / الحمد لله / الله أكبر: زيادة العد
-- أرسل للكل: إرسال دعاء/ذكر للجميع
 """
 
 # ---------------- القوائم ---------------- #
 target_groups, target_users = load_data()
 sent_today = set()
 
-# ---------------- رسالة تشغيل البوت ---------------- #
+# ---------------- رسالة التشغيل عند البداية ---------------- #
 def send_startup_message():
     all_adhkar = daily_adhkar + list(specific_duas.values())
     random_text = random.choice(all_adhkar)
+    
     for group_id in target_groups:
         try:
             line_bot_api.push_message(group_id, TextSendMessage(text=f"📢 تشغيل البوت: {random_text}"))
-        except:
-            pass
+        except Exception as e:
+            print("Error sending to group:", e)
+    
     for uid in target_users:
         try:
             line_bot_api.push_message(uid, TextSendMessage(text=f"📢 تشغيل البوت: {random_text}"))
-        except:
-            pass
+        except Exception as e:
+            print("Error sending to user:", e)
 
 threading.Thread(target=send_startup_message, daemon=True).start()
 
@@ -197,13 +198,34 @@ def handle_message(event):
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
-    # تخزين القروبات والمستخدمين
+    # تخزين القروبات والمستخدمين الجدد وإرسال ذكر تلقائي لهم
+    is_new = False
+    target_id = None
+    
     if hasattr(event.source, 'group_id'):
-        target_groups.add(event.source.group_id)
-        save_data()
+        target_id = event.source.group_id
+        if target_id not in target_groups:
+            target_groups.add(target_id)
+            is_new = True
+            save_data()
     elif hasattr(event.source, 'user_id'):
-        target_users.add(event.source.user_id)
-        save_data()
+        target_id = event.source.user_id
+        if target_id not in target_users:
+            target_users.add(target_id)
+            is_new = True
+            save_data()
+
+    # إذا جديد أرسل له ذكر/دعاء
+    if is_new and target_id:
+        all_adhkar = daily_adhkar + list(specific_duas.values())
+        random_text = random.choice(all_adhkar)
+        try:
+            line_bot_api.push_message(
+                target_id,
+                TextSendMessage(text=f"📢 مرحباً! {random_text}")
+            )
+        except Exception as e:
+            print("Error sending startup message to new user/group:", e)
 
     # الرد على السلام
     if "السلام" in user_text:
@@ -235,22 +257,6 @@ def handle_message(event):
         else:
             status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-        return
-
-    # أرسل للكل
-    if user_text.lower() == "أرسل للكل":
-        all_adhkar = daily_adhkar + list(specific_duas.values())
-        random_text = random.choice(all_adhkar)
-        for group_id in target_groups:
-            try:
-                line_bot_api.push_message(group_id, TextSendMessage(text=random_text))
-            except:
-                pass
-        for uid in target_users:
-            try:
-                line_bot_api.push_message(uid, TextSendMessage(text=random_text))
-            except:
-                pass
         return
 
 if __name__ == "__main__":
