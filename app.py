@@ -187,10 +187,9 @@ def handle_async(body, signature):
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_text = event.message.text.strip()
-    user_id = event.source.user_id
+    source_type = event.source.type
 
-    # تسجيل القروبات والمستخدمين وإرسال ذكر/دعاء مرة يومياً
-    if hasattr(event.source, 'group_id'):
+    if source_type == "group":
         gid = event.source.group_id
         target_groups.add(gid)
         save_data()
@@ -198,7 +197,7 @@ def handle_message(event):
             random_text = random.choice(daily_adhkar + list(specific_duas.values()))
             line_bot_api.push_message(gid, TextSendMessage(text=random_text))
             last_sent[gid] = datetime.now().date()
-    elif hasattr(event.source, 'user_id'):
+    elif source_type == "user":
         uid = event.source.user_id
         target_users.add(uid)
         save_data()
@@ -218,21 +217,21 @@ def handle_message(event):
         return
 
     # حماية الروابط
-    if handle_links(event, user_text, user_id):
+    if handle_links(event, user_text, event.source.user_id):
         return
 
     # التسبيح
-    ensure_user_counts(user_id)
+    ensure_user_counts(event.source.user_id)
     if user_text == "تسبيح":
-        counts = tasbih_counts[user_id]
+        counts = tasbih_counts[event.source.user_id]
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
 
     if user_text in ("سبحان الله", "الحمد لله", "الله أكبر"):
-        tasbih_counts[user_id][user_text] += 1
-        counts = tasbih_counts[user_id]
-        if tasbih_counts[user_id][user_text] >= tasbih_limits:
+        tasbih_counts[event.source.user_id][user_text] += 1
+        counts = tasbih_counts[event.source.user_id]
+        if tasbih_counts[event.source.user_id][user_text] >= tasbih_limits:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"اكتمل {user_text} ({tasbih_limits} مرة)"))
         else:
             status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
