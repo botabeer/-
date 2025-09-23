@@ -10,6 +10,7 @@ import re
 import json
 from datetime import datetime
 from dotenv import load_dotenv
+import schedule
 
 # ---------------- إعداد البوت ---------------- #
 load_dotenv()
@@ -133,8 +134,53 @@ help_text = """
 target_groups, target_users = load_data()
 last_sent = {}  # تخزين آخر وقت أرسل فيه دعاء لكل ID
 
-# ---------------- إرسال تلقائي خمس مرات يوميًا ---------------- #
-def send_daily_adhkar():
+# ---------------- إرسال أذكار الصباح ---------------- #
+def morning_adhkar():
+    all_ids = list(target_groups) + list(target_users)
+    morning_texts = [
+        "أذكار الصباح: اللهم بك أصبحنا وبك أمسينا وبك نحيا وبك نموت وإليك المصير",
+        "سبحان الله وبحمده، سبحان الله العظيم",
+        "اللهم اجعل يومنا خيرًا وبارك لنا فيه"
+    ]
+    for target_id in all_ids:
+        for text in morning_texts:
+            try:
+                line_bot_api.push_message(target_id, TextSendMessage(text=text))
+            except:
+                pass
+
+# ---------------- إرسال أذكار المساء ---------------- #
+def evening_adhkar():
+    all_ids = list(target_groups) + list(target_users)
+    evening_texts = [
+        "أذكار المساء: اللهم بك أمسينا وبك أصبحنا وبك نحيا وبك نموت وإليك المصير",
+        "سبحان الله وبحمده، سبحان الله العظيم",
+        "اللهم احفظنا من كل شر وبارك لنا في مسائنا"
+    ]
+    for target_id in all_ids:
+        for text in evening_texts:
+            try:
+                line_bot_api.push_message(target_id, TextSendMessage(text=text))
+            except:
+                pass
+
+# ---------------- إرسال أذكار النوم ---------------- #
+def night_adhkar():
+    all_ids = list(target_groups) + list(target_users)
+    night_texts = [
+        "أذكار النوم: بسمك اللهم أموت وأحيى",
+        "اللهم قني عذابك يوم تبعث عبادك",
+        "اللهم اغفر لي ذنوبي وارحمني"
+    ]
+    for target_id in all_ids:
+        for text in night_texts:
+            try:
+                line_bot_api.push_message(target_id, TextSendMessage(text=text))
+            except:
+                pass
+
+# ---------------- إرسال عشوائي 5 مرات يوميًا ---------------- #
+def random_daily_adhkar():
     while True:
         all_ids = list(target_groups) + list(target_users)
         if not all_ids:
@@ -151,7 +197,19 @@ def send_daily_adhkar():
                     pass
             time.sleep(86400 / 5)  # تقسيم اليوم على 5 مرات
 
-threading.Thread(target=send_daily_adhkar, daemon=True).start()
+# ---------------- جدولة المهام ---------------- #
+def run_schedule():
+    schedule.every().day.at("05:00").do(morning_adhkar)
+    schedule.every().day.at("17:00").do(evening_adhkar)
+    schedule.every().day.at("22:00").do(night_adhkar)
+
+    while True:
+        schedule.run_pending()
+        time.sleep(30)
+
+# ---------------- تشغيل المهام في Threads ---------------- #
+threading.Thread(target=random_daily_adhkar, daemon=True).start()
+threading.Thread(target=run_schedule, daemon=True).start()
 
 # ---------------- Webhook ---------------- #
 @app.route("/", methods=["GET"])
