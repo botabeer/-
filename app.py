@@ -9,13 +9,13 @@ import time
 import re
 import json
 from datetime import datetime
-from dotenv import load_dotenv
 import schedule
 
 # ---------------- إعداد البوت ---------------- #
-load_dotenv()
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+# القيم مباشرة من المستخدم
+LINE_CHANNEL_ACCESS_TOKEN = "+45+mwHysH3aVwpHoZfxx2TQDClHZW2vTkLTQcUGyjQQX4pEmp5Ofpan0rPzYq/84F/5HNSqqEJ8YeRhmxbKRhPgJMEMQDcFY57RFZ+xjh88NQaQQbh4/WBDIsYucrgLnKzwwXSl0sRbtuJr03+83gdB04t89/1O/w1cDnyilFU="
+LINE_CHANNEL_SECRET = "21d8b470b71a3b46c700c77b67f1f9ff"
+ADMIN_USER_ID = "Ub0345b01633bbe470bb6ca45ed48a913"
 PORT = int(os.getenv("PORT", 5000))
 
 app = Flask(__name__)
