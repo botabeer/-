@@ -132,8 +132,27 @@ help_text = """
 
 # ---------------- القوائم ---------------- #
 target_groups, target_users = load_data()
+scheduler_started = False  # علم لمعرفة إذا بدأ المجدول
+scheduler = BackgroundScheduler()
 
 # ---------------- جدولة الإرسال ---------------- #
+def start_scheduler_if_not_started():
+    global scheduler_started
+    if not scheduler_started:
+        scheduler_started = True
+        # لتجربة الإرسال المتكرر: كل دقيقة
+        scheduler.add_job(send_random_adhkar, "interval", minutes=1)
+
+        # أوقات ثابتة بعد التأكد
+        for hour in [6, 10, 14, 18, 22]:
+            scheduler.add_job(send_random_adhkar, "cron", hour=hour, minute=0)
+        scheduler.add_job(send_morning_adhkar, "cron", hour=5, minute=0)
+        scheduler.add_job(send_evening_adhkar, "cron", hour=17, minute=0)
+        scheduler.add_job(send_sleep_adhkar, "cron", hour=22, minute=0)
+
+        scheduler.start()
+        print("تم تشغيل المجدول تلقائيًا بعد أول رسالة")
+
 def send_random_adhkar():
     all_ids = list(target_groups) + list(target_users)
     if not all_ids:
@@ -173,25 +192,6 @@ def send_sleep_adhkar():
         except Exception as e:
             print("Push error (sleep):", e)
 
-# تفعيل المجدول
-scheduler = BackgroundScheduler()
-
-# تجربة إرسال مباشر عند التشغيل
-send_random_adhkar()
-
-# لتجربة الإرسال المتكرر: كل دقيقة
-scheduler.add_job(send_random_adhkar, "interval", minutes=1)
-
-# أوقات ثابتة بعد التأكد
-for hour in [6, 10, 14, 18, 22]:
-    scheduler.add_job(send_random_adhkar, "cron", hour=hour, minute=0)
-
-scheduler.add_job(send_morning_adhkar, "cron", hour=5, minute=0)
-scheduler.add_job(send_evening_adhkar, "cron", hour=17, minute=0)
-scheduler.add_job(send_sleep_adhkar, "cron", hour=22, minute=0)
-
-scheduler.start()
-
 # ---------------- Webhook ---------------- #
 @app.route("/", methods=["GET"])
 def home():
@@ -217,44 +217,13 @@ def handle_message(event):
     target_id = None
     if hasattr(event.source, 'group_id'):
         target_id = event.source.group_id
-        target_groups.add(target_id)
-        save_data()
+        if target_id not in target_groups:
+            target_groups.add(target_id)
+            save_data()
+            start_scheduler_if_not_started()  # تشغيل المجدول عند أول قروب
     elif hasattr(event.source, 'user_id'):
         target_id = event.source.user_id
-        target_users.add(target_id)
-        save_data()
-
-    # المساعدة
-    if user_text.strip().lower() == "مساعدة":
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
-        return
-
-    # الرد على السلام
-    if "السلام" in user_text:
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="وعليكم السلام ورحمة الله وبركاته"))
-        return
-
-    # حماية الروابط
-    if handle_links(event, user_text, user_id):
-        return
-
-    # التسبيح
-    ensure_user_counts(user_id)
-    if user_text == "تسبيح":
-        counts = tasbih_counts[user_id]
-        status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-        return
-
-    if user_text in ("سبحان الله", "الحمد لله", "الله أكبر"):
-        tasbih_counts[user_id][user_text] += 1
-        counts = tasbih_counts[user_id]
-        if tasbih_counts[user_id][user_text] >= tasbih_limits:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"اكتمل {user_text} ({tasbih_limits} مرة)"))
-        else:
-            status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-        return
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT, threaded=True)
+        if target_id not in target_users:
+            target_users.add(target_id)
+            save_data()
+            start_scheduler_if_not_started
