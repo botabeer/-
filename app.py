@@ -137,6 +137,7 @@ target_groups, target_users = load_data()
 def send_random_adhkar():
     all_ids = list(target_groups) + list(target_users)
     if not all_ids:
+        print("لا يوجد مستخدمين أو مجموعات لإرسال الأذكار.")
         return
 
     all_adhkar = daily_adhkar + list(specific_duas.values())
@@ -144,41 +145,50 @@ def send_random_adhkar():
     for target_id in all_ids:
         try:
             line_bot_api.push_message(target_id, TextSendMessage(text=current_adhkar))
-        except:
-            pass
+            print(f"تم إرسال الأذكار إلى: {target_id}")
+        except Exception as e:
+            print("Push error:", e)
 
 def send_morning_adhkar():
     for target_id in list(target_groups) + list(target_users):
         try:
             line_bot_api.push_message(target_id, TextSendMessage(text="🌅 أذكار الصباح"))
-        except:
-            pass
+            print(f"تم إرسال أذكار الصباح إلى: {target_id}")
+        except Exception as e:
+            print("Push error (morning):", e)
 
 def send_evening_adhkar():
     for target_id in list(target_groups) + list(target_users):
         try:
             line_bot_api.push_message(target_id, TextSendMessage(text="🌇 أذكار المساء"))
-        except:
-            pass
+            print(f"تم إرسال أذكار المساء إلى: {target_id}")
+        except Exception as e:
+            print("Push error (evening):", e)
 
 def send_sleep_adhkar():
     for target_id in list(target_groups) + list(target_users):
         try:
             line_bot_api.push_message(target_id, TextSendMessage(text="😴 أذكار النوم"))
-        except:
-            pass
+            print(f"تم إرسال أذكار النوم إلى: {target_id}")
+        except Exception as e:
+            print("Push error (sleep):", e)
 
 # تفعيل المجدول
 scheduler = BackgroundScheduler()
 
-# ٥ مرات يومياً (ساعات محددة)
+# تجربة إرسال مباشر عند التشغيل
+send_random_adhkar()
+
+# لتجربة الإرسال المتكرر: كل دقيقة
+scheduler.add_job(send_random_adhkar, "interval", minutes=1)
+
+# أوقات ثابتة بعد التأكد
 for hour in [6, 10, 14, 18, 22]:
     scheduler.add_job(send_random_adhkar, "cron", hour=hour, minute=0)
 
-# أوقات ثابتة
-scheduler.add_job(send_morning_adhkar, "cron", hour=5, minute=0)   # ٥ صباحاً
-scheduler.add_job(send_evening_adhkar, "cron", hour=17, minute=0)  # ٥ العصر
-scheduler.add_job(send_sleep_adhkar, "cron", hour=22, minute=0)    # ١٠ بالليل
+scheduler.add_job(send_morning_adhkar, "cron", hour=5, minute=0)
+scheduler.add_job(send_evening_adhkar, "cron", hour=17, minute=0)
+scheduler.add_job(send_sleep_adhkar, "cron", hour=22, minute=0)
 
 scheduler.start()
 
@@ -247,4 +257,4 @@ def handle_message(event):
         return
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT)
+    app.run(host="0.0.0.0", port=PORT, threaded=True)
