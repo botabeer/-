@@ -7,6 +7,7 @@ import os
 import threading
 import random
 import time
+import re
 import json
 from dotenv import load_dotenv
 
@@ -36,8 +37,12 @@ def load_data():
         return set(), set()
 
 def save_data():
+    data = {
+        "groups": list(target_groups),
+        "users": list(target_users)
+    }
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump({"groups": list(target_groups), "users": list(target_users)}, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 # ---------------- بيانات التسبيح ---------------- #
 tasbih_limits = 33
@@ -46,6 +51,24 @@ tasbih_counts = {}
 def ensure_user_counts(uid):
     if uid not in tasbih_counts:
         tasbih_counts[uid] = {"سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
+
+# ---------------- حماية الروابط ---------------- #
+links_count = {}
+
+def handle_links(user_id, user_text, reply_token):
+    if re.search(r"(https?://\S+|www\.\S+)", user_text):
+        if user_id not in links_count:
+            links_count[user_id] = 1
+        else:
+            links_count[user_id] += 1
+
+        if links_count[user_id] == 2:
+            line_bot_api.reply_message(
+                reply_token,
+                TextSendMessage(text="الرجاء عدم تكرار الروابط")
+            )
+        return True
+    return False
 
 # ---------------- أذكار وأدعية ---------------- #
 daily_adhkar = [
@@ -72,6 +95,7 @@ specific_duas = {
     "دعاء النجاح": "اللهم وفقني ونجحني في حياتي وحقّق لي ما أحب"
 }
 
+# ---------------- أوامر المساعدة ---------------- #
 help_text = """
 أوامر البوت المتاحة:
 
@@ -89,48 +113,33 @@ help_text = """
 target_groups, target_users = load_data()
 
 # ---------------- إرسال الأذكار ---------------- #
-def send_random_adhkar():
-    all_ids = list(target_groups) + list(target_users)
-    if not all_ids:
-        return
+def send_random_adhkar_to(target_id):
     all_adhkar = daily_adhkar + list(specific_duas.values())
     current_adhkar = random.choice(all_adhkar)
-    for target_id in all_ids:
-        try:
-            line_bot_api.push_message(target_id, TextSendMessage(text=current_adhkar))
-        except:
-            pass
+    try:
+        line_bot_api.push_message(target_id, TextSendMessage(text=current_adhkar))
+    except:
+        pass
 
 def send_morning_adhkar():
     for target_id in list(target_groups) + list(target_users):
-        try:
-            line_bot_api.push_message(target_id, TextSendMessage(text="🌅 أذكار الصباح"))
-        except:
-            pass
+        send_random_adhkar_to(target_id)
 
 def send_evening_adhkar():
     for target_id in list(target_groups) + list(target_users):
-        try:
-            line_bot_api.push_message(target_id, TextSendMessage(text="🌇 أذكار المساء"))
-        except:
-            pass
+        send_random_adhkar_to(target_id)
 
 def send_sleep_adhkar():
     for target_id in list(target_groups) + list(target_users):
-        try:
-            line_bot_api.push_message(target_id, TextSendMessage(text="😴 أذكار النوم"))
-        except:
-            pass
+        send_random_adhkar_to(target_id)
 
 # ---------------- جدولة الإرسال ---------------- #
 scheduler = BackgroundScheduler()
-
-# إرسال عشوائي كل دقيقة (لتجربة)
-scheduler.add_job(send_random_adhkar, "interval", minutes=1)
+scheduler.add_job(lambda: [send_random_adhkar_to(tid) for tid in list(target_groups) + list(target_users)], "interval", minutes=1)
 
 # أوقات محددة
 for hour in [6, 10, 14, 18, 22]:
-    scheduler.add_job(send_random_adhkar, "cron", hour=hour, minute=0)
+    scheduler.add_job(lambda: [send_random_adhkar_to(tid) for tid in list(target_groups) + list(target_users)], "cron", hour=hour, minute=0)
 
 scheduler.add_job(send_morning_adhkar, "cron", hour=5, minute=0)
 scheduler.add_job(send_evening_adhkar, "cron", hour=17, minute=0)
@@ -158,15 +167,26 @@ def callback():
 def handle_message(event):
     user_text = event.message.text.strip()
     user_id = event.source.user_id
+    first_time = False
 
     # تسجيل المستخدمين والقروبات تلقائي
     if hasattr(event.source, 'group_id'):
-        target_groups.add(event.source.group_id)
+        target_id = event.source.group_id
+        if target_id not in target_groups:
+            target_groups.add(target_id)
+            first_time = True
     else:
-        target_users.add(user_id)
-    save_data()
+        target_id = user_id
+        if user_id not in target_users:
+            target_users.add(user_id)
+            first_time = True
 
+    save_data()
     ensure_user_counts(user_id)
+
+    # إذا كان أول مرة، أرسل ذكر أو دعاء مباشرة
+    if first_time:
+        send_random_adhkar_to(target_id)
 
     # المساعدة
     if user_text.lower() == "مساعدة":
@@ -186,6 +206,9 @@ def handle_message(event):
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
+
+    # حماية الروابط
+    handle_links(user_id, user_text, event.reply_token)
 
     # إرسال ذكر عشوائي عند أي رسالة
     message = random.choice(daily_adhkar)
