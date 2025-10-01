@@ -7,7 +7,6 @@ import os
 import threading
 import random
 import time
-import re
 import json
 from dotenv import load_dotenv
 
@@ -51,24 +50,6 @@ tasbih_counts = {}
 def ensure_user_counts(uid):
     if uid not in tasbih_counts:
         tasbih_counts[uid] = {"سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
-
-# ---------------- حماية الروابط ---------------- #
-links_count = {}
-
-def handle_links(user_id, user_text, reply_token):
-    if re.search(r"(https?://\S+|www\.\S+)", user_text):
-        if user_id not in links_count:
-            links_count[user_id] = 1
-        else:
-            links_count[user_id] += 1
-
-        if links_count[user_id] == 2:
-            line_bot_api.reply_message(
-                reply_token,
-                TextSendMessage(text="الرجاء عدم تكرار الروابط")
-            )
-        return True
-    return False
 
 # ---------------- أذكار وأدعية ---------------- #
 daily_adhkar = [
@@ -137,7 +118,6 @@ def send_sleep_adhkar():
 scheduler = BackgroundScheduler()
 scheduler.add_job(lambda: [send_random_adhkar_to(tid) for tid in list(target_groups) + list(target_users)], "interval", minutes=1)
 
-# أوقات محددة
 for hour in [6, 10, 14, 18, 22]:
     scheduler.add_job(lambda: [send_random_adhkar_to(tid) for tid in list(target_groups) + list(target_users)], "cron", hour=hour, minute=0)
 
@@ -184,16 +164,15 @@ def handle_message(event):
     save_data()
     ensure_user_counts(user_id)
 
-    # إذا كان أول مرة، أرسل ذكر أو دعاء مباشرة
+    # إرسال ذكر عشوائي لأول مرة
     if first_time:
         send_random_adhkar_to(target_id)
 
-    # المساعدة
+    # الرد **فقط على الأوامر**
     if user_text.lower() == "مساعدة":
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
 
-    # التسبيح
     if user_text == "تسبيح":
         counts = tasbih_counts[user_id]
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
@@ -206,13 +185,6 @@ def handle_message(event):
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
-
-    # حماية الروابط
-    handle_links(user_id, user_text, event.reply_token)
-
-    # إرسال ذكر عشوائي عند أي رسالة
-    message = random.choice(daily_adhkar)
-    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, threaded=True)
