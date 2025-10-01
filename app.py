@@ -5,7 +5,6 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from apscheduler.schedulers.background import BackgroundScheduler
 import os
 import random
-import time
 import json
 from dotenv import load_dotenv
 
@@ -53,15 +52,15 @@ def handle_links(event, user_text, user_id):
     if "http://" in user_text or "https://" in user_text or "www." in user_text:
         if user_id not in links_count:
             links_count[user_id] = 1
-            return False  # تجاهل أول رابط
         else:
             links_count[user_id] += 1
-            if links_count[user_id] >= 2:
-                line_bot_api.reply_message(
-                    event.reply_token,
-                    TextSendMessage(text="الرجاء عدم تكرار الروابط")
-                )
-            return True
+
+        if links_count[user_id] >= 2:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="الرجاء عدم تكرار الروابط")
+            )
+        return True
     return False
 
 # ---------------- أذكار وأدعية ---------------- #
@@ -70,37 +69,12 @@ daily_adhkar = [
     "أستغفر الله العظيم وأتوب إليه",
     "اللهم اجعل قلبي مطمئناً بالإيمان",
     "اللهم اغفر لوالديّ وارزقهم الفردوس الأعلى",
-    "اللهم ارحم موتانا وموتى المسلمين واجعل قبورهم روضة",
     "اللهم احفظني وأهلي من كل سوء وشر",
-    "أعوذ بكلمات الله التامات من شر ما خلق",
-    "اللهم ارزقنا رزقاً حلالاً طيباً وبارك لنا فيه",
+    "اللهم ارزقنا رزقاً حلالاً طيباً واسعاً وبارك لنا فيه",
     "اللهم وفقني في حياتي وحقق لي الخير",
-    "اللهم احفظ بدني وعقلي وروحي",
     "اللهم اشف مرضانا ومرضى المسلمين",
-    "اللهم اجعل قلبي مطمئناً وقريباً منك"
+    "أعوذ بكلمات الله التامات من شر ما خلق"
 ]
-
-specific_duas = {
-    "دعاء الموتى": "اللهم ارحم موتانا وموتى المسلمين واجعل قبورهم روضة من رياض الجنة",
-    "دعاء الوالدين": "اللهم اغفر لوالديّ وارزقهم الفردوس الأعلى",
-    "دعاء النفس": "اللهم اجعل عملي خالصاً لوجهك واغفر لي ذنوبي",
-    "دعاء التحصين": "اللهم احفظني وأهلي من كل سوء وشر",
-    "دعاء الرزق": "اللهم ارزقنا رزقاً حلالاً طيباً واسعاً وبارك لنا فيه",
-    "دعاء النجاح": "اللهم وفقني ونجحني في حياتي وحقّق لي ما أحب"
-}
-
-help_text = """
-أوامر البوت المتاحة:
-
-1. مساعدة
-   - عرض قائمة الأوامر.
-
-2. تسبيح
-   - عرض عدد التسبيحات لكل كلمة لكل مستخدم.
-
-3. سبحان الله / الحمد لله / الله أكبر
-   - زيادة عدد التسبيحات لكل كلمة.
-"""
 
 # ---------------- القوائم ---------------- #
 target_groups, target_users = load_data()
@@ -110,25 +84,17 @@ def send_random_adhkar():
     all_ids = list(target_groups) + list(target_users)
     if not all_ids:
         return
-    all_adhkar = daily_adhkar + list(specific_duas.values())
-    current_adhkar = random.choice(all_adhkar)
+    message = random.choice(daily_adhkar)
     for target_id in all_ids:
         try:
-            line_bot_api.push_message(target_id, TextSendMessage(text=current_adhkar))
+            line_bot_api.push_message(target_id, TextSendMessage(text=message))
         except:
             pass
 
-# ---------------- جدولة الإرسال العشوائي ---------------- #
+# ---------------- جدولة الإرسال ---------------- #
 scheduler = BackgroundScheduler()
-
-def schedule_random_times():
-    # إرسال بين الساعة 6 صباحًا و 10 مساءً في أوقات عشوائية
-    for _ in range(5):  # 5 أوقات يوميًا
-        hour = random.randint(6, 22)
-        minute = random.randint(0, 59)
-        scheduler.add_job(send_random_adhkar, "cron", hour=hour, minute=minute)
-
-schedule_random_times()
+# إرسال عشوائي كل ساعة (يمكنك تغيير التوقيت حسب الرغبة)
+scheduler.add_job(send_random_adhkar, "interval", minutes=60)
 scheduler.start()
 
 # ---------------- Webhook ---------------- #
@@ -152,7 +118,7 @@ def handle_message(event):
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
-    # تسجيل المستخدمين والمجموعات تلقائي
+    # تسجيل المستخدمين والمجموعات لأول مرة
     first_time = False
     if hasattr(event.source, 'group_id'):
         target_id = event.source.group_id
@@ -170,18 +136,26 @@ def handle_message(event):
 
     # إرسال أذكار أول تواصل فقط
     if first_time:
-        try:
-            line_bot_api.push_message(target_id, TextSendMessage(text="البوت شغال ✅"))
-            send_random_adhkar()
-        except:
-            pass
+        send_random_adhkar()
 
     # حماية الروابط
     if handle_links(event, user_text, user_id):
         return
 
-    # الرد على أوامر البوت فقط
+    # الرد على أوامر محددة فقط
     if user_text.lower() == "مساعدة":
+        help_text = """
+أوامر البوت المتاحة:
+
+1. مساعدة
+   - عرض قائمة الأوامر.
+
+2. تسبيح
+   - عرض عدد التسبيحات لكل كلمة لكل مستخدم.
+
+3. سبحان الله / الحمد لله / الله أكبر
+   - زيادة عدد التسبيحات لكل كلمة.
+"""
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
 
