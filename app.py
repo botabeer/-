@@ -50,21 +50,15 @@ def ensure_user_counts(uid):
 # ---------------- حماية الروابط ---------------- #
 links_count = {}
 
-def handle_links(event, user_text, user_id):
-    if "http://" in user_text or "https://" in user_text or "www." in user_text:
-        if user_id not in links_count:
-            links_count[user_id] = 1
-        else:
-            links_count[user_id] += 1
-
-        if links_count[user_id] == 2:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
-        elif links_count[user_id] > 4:
-            if user_id in target_users:
-                target_users.remove(user_id)
-                save_data()
-        return True
-    return False
+def handle_links(user_id):
+    if user_id not in links_count:
+        links_count[user_id] = 1
+        return None  # لا يرد إذا هذه أول مرة
+    else:
+        links_count[user_id] += 1
+        if links_count[user_id] >= 2:
+            return "الرجاء عدم تكرار الروابط"
+    return None
 
 # ---------------- أذكار وأدعية ---------------- #
 daily_adhkar = [
@@ -91,6 +85,7 @@ specific_duas = {
     "دعاء النجاح": "اللهم وفقني ونجحني في حياتي وحقّق لي ما أحب"
 }
 
+# ---------------- أوامر المساعدة ---------------- #
 help_text = """
 أوامر البوت المتاحة:
 
@@ -102,13 +97,10 @@ help_text = """
 
 3. سبحان الله / الحمد لله / الله أكبر
    - زيادة عدد التسبيحات لكل كلمة.
-"""
 
-# ---------------- Auto-response ---------------- #
-auto_commands = {
-    "اضافة": "نزل الحساب",
-    "الادارة": "تمت الإضافة"
-}
+4. أوامر إضافية مخصصة
+   - البوت يتعرف على الأوامر التي تضيفها يدوياً تلقائياً.
+"""
 
 # ---------------- القوائم ---------------- #
 target_groups, target_users = load_data()
@@ -149,12 +141,18 @@ def send_sleep_adhkar():
 
 # ---------------- جدولة الإرسال ---------------- #
 scheduler = BackgroundScheduler()
+
+# إرسال عشوائي كل دقيقة (لتجربة)
 scheduler.add_job(send_random_adhkar, "interval", minutes=1)
+
+# أوقات محددة
 for hour in [6, 10, 14, 18, 22]:
     scheduler.add_job(send_random_adhkar, "cron", hour=hour, minute=0)
+
 scheduler.add_job(send_morning_adhkar, "cron", hour=5, minute=0)
 scheduler.add_job(send_evening_adhkar, "cron", hour=17, minute=0)
 scheduler.add_job(send_sleep_adhkar, "cron", hour=22, minute=0)
+
 scheduler.start()
 
 # ---------------- Webhook ---------------- #
@@ -178,43 +176,28 @@ def handle_message(event):
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
-    # تسجيل المستخدمين والمجموعات تلقائي
-    first_time = False
+    # تسجيل المستخدمين والقروبات تلقائي
     if hasattr(event.source, 'group_id'):
-        target_id = event.source.group_id
-        if target_id not in target_groups:
-            first_time = True
-        target_groups.add(target_id)
+        target_groups.add(event.source.group_id)
     else:
-        target_id = user_id
-        if target_id not in target_users:
-            first_time = True
-        target_users.add(target_id)
-
+        target_users.add(user_id)
     save_data()
+
     ensure_user_counts(user_id)
 
-    # إرسال أذكار أول تواصل فقط
-    if first_time:
-        try:
-            line_bot_api.push_message(target_id, TextSendMessage(text="أهلاً! سيتم إرسال الأذكار والأدعية تلقائياً."))
-            send_random_adhkar()
-        except:
-            pass
-
     # حماية الروابط
-    if handle_links(event, user_text, user_id):
-        return
+    if "http" in user_text or "www." in user_text:
+        response = handle_links(user_id)
+        if response:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=response))
+        return  # لا يكمل أي رد آخر على الرابط
 
-    # الرد على أوامر البوت فقط
+    # المساعدة
     if user_text.lower() == "مساعدة":
-        extra_cmds = "\n".join(auto_commands.keys())
-        text = help_text
-        if extra_cmds:
-            text += "\n" + extra_cmds
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=text))
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
 
+    # التسبيح
     if user_text == "تسبيح":
         counts = tasbih_counts[user_id]
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
@@ -226,10 +209,6 @@ def handle_message(event):
         counts = tasbih_counts[user_id]
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-        return
-
-    if user_text in auto_commands:
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=auto_commands[user_text]))
         return
 
 if __name__ == "__main__":
