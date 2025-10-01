@@ -22,6 +22,7 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # ---------------- ملف التخزين ---------------- #
 DATA_FILE = "data.json"
+CONTENT_FILE = "content.json"  # ملف الأذكار والأدعية والآيات
 
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -39,6 +40,15 @@ def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump({"groups": list(target_groups), "users": list(target_users)}, f, ensure_ascii=False, indent=2)
 
+# ---------------- تحميل المحتوى ---------------- #
+def load_content():
+    if os.path.exists(CONTENT_FILE):
+        with open(CONTENT_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"adhkar": [], "duas": [], "quran": [], "ahadith": []}
+
+content = load_content()
+
 # ---------------- بيانات التسبيح ---------------- #
 tasbih_limits = 33
 tasbih_counts = {}
@@ -50,40 +60,22 @@ def ensure_user_counts(uid):
 # ---------------- حماية الروابط ---------------- #
 links_count = {}
 
-def handle_links(user_id):
-    if user_id not in links_count:
-        links_count[user_id] = 1
-        return None  # لا يرد إذا هذه أول مرة
-    else:
-        links_count[user_id] += 1
-        if links_count[user_id] >= 2:
-            return "الرجاء عدم تكرار الروابط"
-    return None
-
-# ---------------- أذكار وأدعية ---------------- #
-daily_adhkar = [
-    "اللهم اجعل عملي خالصاً لوجهك واغفر لي ذنوبي",
-    "أستغفر الله العظيم وأتوب إليه",
-    "اللهم اجعل قلبي مطمئناً بالإيمان",
-    "اللهم اغفر لوالديّ وارزقهم الفردوس الأعلى",
-    "اللهم ارحم موتانا وموتى المسلمين واجعل قبورهم روضة",
-    "اللهم احفظني وأهلي من كل سوء وشر",
-    "أعوذ بكلمات الله التامات من شر ما خلق",
-    "اللهم ارزقنا رزقاً حلالاً طيباً واسعاً وبارك لنا فيه",
-    "اللهم وفقني في حياتي وحقق لي الخير",
-    "اللهم احفظ بدني وعقلي وروحي",
-    "اللهم اشف مرضانا ومرضى المسلمين",
-    "اللهم اجعل قلبي مطمئناً وقريباً منك"
-]
-
-specific_duas = {
-    "دعاء الموتى": "اللهم ارحم موتانا وموتى المسلمين واجعل قبورهم روضة من رياض الجنة",
-    "دعاء الوالدين": "اللهم اغفر لوالديّ وارزقهم الفردوس الأعلى",
-    "دعاء النفس": "اللهم اجعل عملي خالصاً لوجهك واغفر لي ذنوبي",
-    "دعاء التحصين": "اللهم احفظني وأهلي من كل سوء وشر",
-    "دعاء الرزق": "اللهم ارزقنا رزقاً حلالاً طيباً واسعاً وبارك لنا فيه",
-    "دعاء النجاح": "اللهم وفقني ونجحني في حياتي وحقّق لي ما أحب"
-}
+def handle_links(event, user_text, user_id):
+    import re
+    if re.search(r"(https?://\S+|www\.\S+)", user_text):
+        if user_id in links_count:
+            links_count[user_id] += 1
+            if links_count[user_id] >= 2:
+                line_bot_api.reply_message(event.reply_token,
+                                           TextSendMessage(text="الرجاء عدم تكرار الروابط"))
+        else:
+            links_count[user_id] = 1
+        if links_count[user_id] > 4:
+            if user_id in target_users:
+                target_users.remove(user_id)
+            save_data()
+        return True
+    return False
 
 # ---------------- أوامر المساعدة ---------------- #
 help_text = """
@@ -97,68 +89,41 @@ help_text = """
 
 3. سبحان الله / الحمد لله / الله أكبر
    - زيادة عدد التسبيحات لكل كلمة.
-
-4. أوامر إضافية مخصصة
-   - البوت يتعرف على الأوامر التي تضيفها يدوياً تلقائياً.
 """
 
 # ---------------- القوائم ---------------- #
 target_groups, target_users = load_data()
 
-# ---------------- إرسال الأذكار ---------------- #
-def send_random_adhkar():
+# ---------------- إرسال المحتوى ---------------- #
+scheduler = BackgroundScheduler()
+
+def send_random_message():
     all_ids = list(target_groups) + list(target_users)
     if not all_ids:
         return
-    all_adhkar = daily_adhkar + list(specific_duas.values())
-    current_adhkar = random.choice(all_adhkar)
+    all_content = content["adhkar"] + content["duas"] + content["quran"] + content["ahadith"]
+    message = random.choice(all_content)
     for target_id in all_ids:
         try:
-            line_bot_api.push_message(target_id, TextSendMessage(text=current_adhkar))
+            line_bot_api.push_message(target_id, TextSendMessage(text=message))
         except:
             pass
 
-def send_morning_adhkar():
-    for target_id in list(target_groups) + list(target_users):
-        try:
-            line_bot_api.push_message(target_id, TextSendMessage(text="🌅 أذكار الصباح"))
-        except:
-            pass
+# إرسال تذكير تلقائي عند أول رسالة
+first_run_done = False
 
-def send_evening_adhkar():
-    for target_id in list(target_groups) + list(target_users):
-        try:
-            line_bot_api.push_message(target_id, TextSendMessage(text="🌇 أذكار المساء"))
-        except:
-            pass
+# إرسال متفرقة كل 30-90 دقيقة
+def schedule_random_messages():
+    send_random_message()
+    interval = random.randint(30, 90) * 60
+    threading.Timer(interval, schedule_random_messages).start()
 
-def send_sleep_adhkar():
-    for target_id in list(target_groups) + list(target_users):
-        try:
-            line_bot_api.push_message(target_id, TextSendMessage(text="😴 أذكار النوم"))
-        except:
-            pass
-
-# ---------------- جدولة الإرسال ---------------- #
-scheduler = BackgroundScheduler()
-
-# إرسال عشوائي كل دقيقة (لتجربة)
-scheduler.add_job(send_random_adhkar, "interval", minutes=1)
-
-# أوقات محددة
-for hour in [6, 10, 14, 18, 22]:
-    scheduler.add_job(send_random_adhkar, "cron", hour=hour, minute=0)
-
-scheduler.add_job(send_morning_adhkar, "cron", hour=5, minute=0)
-scheduler.add_job(send_evening_adhkar, "cron", hour=17, minute=0)
-scheduler.add_job(send_sleep_adhkar, "cron", hour=22, minute=0)
-
-scheduler.start()
+schedule_random_messages()
 
 # ---------------- Webhook ---------------- #
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running", 200
+    return "البوت شغال ✅", 200
 
 @app.route("/callback", methods=["POST"])
 def callback():
@@ -173,6 +138,7 @@ def callback():
 # ---------------- معالجة الرسائل ---------------- #
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
+    global first_run_done
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
@@ -184,13 +150,6 @@ def handle_message(event):
     save_data()
 
     ensure_user_counts(user_id)
-
-    # حماية الروابط
-    if "http" in user_text or "www." in user_text:
-        response = handle_links(user_id)
-        if response:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=response))
-        return  # لا يكمل أي رد آخر على الرابط
 
     # المساعدة
     if user_text.lower() == "مساعدة":
@@ -210,6 +169,15 @@ def handle_message(event):
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
+
+    # حماية الروابط
+    handle_links(event, user_text, user_id)
+
+    # إرسال تذكير تلقائي عند أول رسالة
+    if not first_run_done:
+        first_run_done = True
+        send_random_message()
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="البوت شغال ✅"))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, threaded=True)
