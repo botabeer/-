@@ -4,9 +4,7 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from apscheduler.schedulers.background import BackgroundScheduler
 import os
-import threading
 import random
-import time
 import json
 from dotenv import load_dotenv
 
@@ -22,7 +20,7 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # ---------------- ملف التخزين ---------------- #
 DATA_FILE = "data.json"
-CONTENT_FILE = "content.json"  # ملف الأذكار والأدعية والآيات
+ADHKAR_FILE = "adhkar.json"
 
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -40,15 +38,6 @@ def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump({"groups": list(target_groups), "users": list(target_users)}, f, ensure_ascii=False, indent=2)
 
-# ---------------- تحميل المحتوى ---------------- #
-def load_content():
-    if os.path.exists(CONTENT_FILE):
-        with open(CONTENT_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {"adhkar": [], "duas": [], "quran": [], "ahadith": []}
-
-content = load_content()
-
 # ---------------- بيانات التسبيح ---------------- #
 tasbih_limits = 33
 tasbih_counts = {}
@@ -61,69 +50,54 @@ def ensure_user_counts(uid):
 links_count = {}
 
 def handle_links(event, user_text, user_id):
-    import re
-    if re.search(r"(https?://\S+|www\.\S+)", user_text):
-        if user_id in links_count:
-            links_count[user_id] += 1
-            if links_count[user_id] >= 2:
-                line_bot_api.reply_message(event.reply_token,
-                                           TextSendMessage(text="الرجاء عدم تكرار الروابط"))
-        else:
+    if "http://" in user_text or "https://" in user_text or "www." in user_text:
+        if user_id not in links_count:
             links_count[user_id] = 1
-        if links_count[user_id] > 4:
+        else:
+            links_count[user_id] += 1
+
+        if links_count[user_id] == 2:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
+        elif links_count[user_id] > 4:
             if user_id in target_users:
                 target_users.remove(user_id)
-            save_data()
+                save_data()
         return True
     return False
 
-# ---------------- أوامر المساعدة ---------------- #
-help_text = """
-أوامر البوت المتاحة:
+# ---------------- تحميل الأذكار ---------------- #
+def load_adhkar():
+    if os.path.exists(ADHKAR_FILE):
+        with open(ADHKAR_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return ["سبحان الله", "الحمد لله", "الله أكبر"]
 
-1. مساعدة
-   - عرض قائمة الأوامر.
-
-2. تسبيح
-   - عرض عدد التسبيحات لكل كلمة لكل مستخدم.
-
-3. سبحان الله / الحمد لله / الله أكبر
-   - زيادة عدد التسبيحات لكل كلمة.
-"""
+adhkar_list = load_adhkar()
 
 # ---------------- القوائم ---------------- #
 target_groups, target_users = load_data()
 
-# ---------------- إرسال المحتوى ---------------- #
-scheduler = BackgroundScheduler()
-
-def send_random_message():
+# ---------------- إرسال الأذكار ---------------- #
+def send_random_adhkar():
     all_ids = list(target_groups) + list(target_users)
-    if not all_ids:
+    if not all_ids or not adhkar_list:
         return
-    all_content = content["adhkar"] + content["duas"] + content["quran"] + content["ahadith"]
-    message = random.choice(all_content)
+    current_adhkar = random.choice(adhkar_list)
     for target_id in all_ids:
         try:
-            line_bot_api.push_message(target_id, TextSendMessage(text=message))
+            line_bot_api.push_message(target_id, TextSendMessage(text=current_adhkar))
         except:
             pass
 
-# إرسال تذكير تلقائي عند أول رسالة
-first_run_done = False
-
-# إرسال متفرقة كل 30-90 دقيقة
-def schedule_random_messages():
-    send_random_message()
-    interval = random.randint(30, 90) * 60
-    threading.Timer(interval, schedule_random_messages).start()
-
-schedule_random_messages()
+# ---------------- جدولة الإرسال ---------------- #
+scheduler = BackgroundScheduler()
+scheduler.add_job(send_random_adhkar, "interval", minutes=random.randint(30, 180))
+scheduler.start()
 
 # ---------------- Webhook ---------------- #
 @app.route("/", methods=["GET"])
 def home():
-    return "البوت شغال ✅", 200
+    return "Bot is running ✅", 200
 
 @app.route("/callback", methods=["POST"])
 def callback():
@@ -138,25 +112,54 @@ def callback():
 # ---------------- معالجة الرسائل ---------------- #
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    global first_run_done
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
-    # تسجيل المستخدمين والقروبات تلقائي
+    # تسجيل المستخدمين والمجموعات تلقائي
+    first_time = False
     if hasattr(event.source, 'group_id'):
-        target_groups.add(event.source.group_id)
+        target_id = event.source.group_id
+        if target_id not in target_groups:
+            first_time = True
+        target_groups.add(target_id)
     else:
-        target_users.add(user_id)
-    save_data()
+        target_id = user_id
+        if target_id not in target_users:
+            first_time = True
+        target_users.add(target_id)
 
+    save_data()
     ensure_user_counts(user_id)
 
-    # المساعدة
-    if user_text.lower() == "مساعدة":
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
+    # أول تواصل
+    if first_time:
+        try:
+            line_bot_api.push_message(target_id, TextSendMessage(text="البوت شغال ✅"))
+            send_random_adhkar()
+        except:
+            pass
+
+    # حماية الروابط
+    if handle_links(event, user_text, user_id):
         return
 
-    # التسبيح
+    # أوامر البوت
+    if user_text.lower() == "مساعدة":
+        text = """
+أوامر البوت المتاحة:
+
+1. مساعدة
+   - عرض قائمة الأوامر.
+
+2. تسبيح
+   - عرض عدد التسبيحات لكل كلمة لكل مستخدم.
+
+3. سبحان الله / الحمد لله / الله أكبر
+   - زيادة عدد التسبيحات لكل كلمة.
+"""
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=text))
+        return
+
     if user_text == "تسبيح":
         counts = tasbih_counts[user_id]
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
@@ -169,15 +172,6 @@ def handle_message(event):
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
-
-    # حماية الروابط
-    handle_links(event, user_text, user_id)
-
-    # إرسال تذكير تلقائي عند أول رسالة
-    if not first_run_done:
-        first_run_done = True
-        send_random_message()
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="البوت شغال ✅"))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, threaded=True)
