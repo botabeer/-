@@ -3,69 +3,43 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import os, json, random, threading, time
-from dotenv import load_dotenv
 
-# ---------------- إعداد البوت ---------------- #
-load_dotenv()
 app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
-PORT = int(os.getenv("PORT", 5000))
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# ---------------- ملفات البيانات ---------------- #
-DATA_FILE = "data.json"
-CONTENT_FILE = "content.json"
+# تحميل المحتوى
+with open("content.json", "r", encoding="utf-8") as f:
+    content = json.load(f)
 
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({"users": [], "groups": [], "tasbih": {}, "notify": {}}, f, ensure_ascii=False, indent=2)
-        return set(), set(), {}, {}
+# تحميل بيانات المستخدمين والمجموعات
+DATA_FILE = "data.json"
+if os.path.exists(DATA_FILE):
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-        return set(data.get("groups", [])), set(data.get("users", [])), data.get("tasbih", {}), data.get("notify", {})
+else:
+    data = {"users": [], "groups": [], "notify": {}}
 
 def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump({
-            "groups": list(target_groups),
-            "users": list(target_users),
-            "tasbih": tasbih_counts,
-            "notify": notify_status
-        }, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-target_groups, target_users, tasbih_counts, notify_status = load_data()
-
-# ---------------- تحميل المحتوى ---------------- #
-with open(CONTENT_FILE, "r", encoding="utf-8") as f:
-    content = json.load(f)
-
-# ---------------- إرسال رسائل عشوائية ---------------- #
-def send_random_message():
-    message = random.choice(content["duas"] + content["adhkar"] + content["hadiths"])
-    all_ids = list(target_groups) + list(target_users)
-    for tid in all_ids:
-        # إرسال فقط لمن لم يوقف الإشعارات
-        if notify_status.get(tid, True):
-            try:
-                line_bot_api.push_message(tid, TextSendMessage(text=message))
-            except:
-                pass
-
-def message_loop():
+# وظيفة إرسال الرسائل التلقائية لجميع المستخدمين والمجموعات
+def send_auto_messages():
     while True:
-        send_random_message()
-        time.sleep(random.randint(3600, 5400))  # بين ساعة و1.5 ساعة
+        for target_id in data["notify"]:
+            if data["notify"][target_id]:
+                message = random.choice(content["duas"] + content["adhkar"] + content["hadiths"])
+                try:
+                    line_bot_api.push_message(target_id, TextSendMessage(text=message))
+                except:
+                    pass
+        time.sleep(random.randint(3600, 7200))  # بين 1 و 2 ساعة بشكل عشوائي
 
-threading.Thread(target=message_loop, daemon=True).start()
-
-# ---------------- Webhook ---------------- #
-@app.route("/", methods=["GET"])
-def home():
-    return "Bot is running", 200
+threading.Thread(target=send_auto_messages, daemon=True).start()
 
 @app.route("/callback", methods=["POST"])
 def callback():
@@ -74,112 +48,53 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        print("خطأ في التوقيع")
+        return "Invalid signature", 400
     return "OK", 200
 
-# ---------------- حماية الروابط ---------------- #
-links_count = {}
-def handle_links(event, user_id):
-    text = event.message.text.strip()
-    if "http://" in text or "https://" in text or "www." in text:
-        if user_id not in links_count:
-            links_count[user_id] = 1
-        else:
-            links_count[user_id] += 1
-        if links_count[user_id] >= 2:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
-        return True
-    return False
-
-# ---------------- تسبيح ---------------- #
-tasbih_limits = 33
-def ensure_user_counts(uid):
-    if uid not in tasbih_counts:
-        tasbih_counts[uid] = {"سبحان الله":0, "الحمد لله":0, "الله أكبر":0}
-
-# ---------------- معالجة الرسائل ---------------- #
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    user_text = event.message.text.strip()
+    text = event.message.text.strip()
     user_id = event.source.user_id
+    group_id = getattr(event.source, "group_id", None)
+    target_id = group_id if group_id else user_id
 
-    # تسجيل المستخدمين والقروبات لأول مرة
-    first_time = False
-    if hasattr(event.source, 'group_id') and event.source.group_id:
-        target_id = event.source.group_id
-        if target_id not in target_groups:
-            first_time = True
-        target_groups.add(target_id)
+    # تسجيل المعرفات
+    if group_id:
+        if group_id not in data["groups"]:
+            data["groups"].append(group_id)
     else:
-        target_id = user_id
-        if target_id not in target_users:
-            first_time = True
-        target_users.add(target_id)
-
-    # افتراضياً الإشعارات مفعلة
-    if target_id not in notify_status:
-        notify_status[target_id] = True
-
+        if user_id not in data["users"]:
+            data["users"].append(user_id)
+    if target_id not in data["notify"]:
+        data["notify"][target_id] = True
     save_data()
-    ensure_user_counts(user_id)
 
-    # إرسال رسالة عشوائية عند أول تواصل
-    if first_time:
-        message = random.choice(content["duas"] + content["adhkar"] + content["hadiths"])
-        line_bot_api.push_message(target_id, TextSendMessage(text=message))
-
-    # حماية الروابط
-    if handle_links(event, user_id):
-        return
-
-    # أوامر محددة
-    if user_text.lower() == "مساعدة":
+    # أوامر المستخدم
+    if text.lower() == "مساعدة":
         help_text = """أوامر البوت:
-
-1. ذكرني
-   - يرسل لك دعاء/حديث/ذكر عشوائي
-2. تسبيح
-   - عرض عدد التسبيحات لكل كلمة
-3. سبحان الله / الحمد لله / الله أكبر
-   - زيادة عدد التسبيحات لكل كلمة
-4. إيقاف
-   - يوقف الإشعارات التلقائية
-5. تشغيل
-   - يعيد تفعيل الإشعارات التلقائية
+1. ذكرني - يرسل لك دعاء/حديث/ذكر عشوائي
+2. إيقاف - يوقف الإشعارات التلقائية
+3. تشغيل - يعيد تفعيل الإشعارات التلقائية
 """
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
 
-    if user_text.lower() == "ذكرني":
-        if notify_status.get(target_id, True):
-            message = random.choice(content["duas"] + content["adhkar"] + content["hadiths"])
-            line_bot_api.push_message(target_id, TextSendMessage(text=message))
+    if text.lower() == "ذكرني" and data["notify"].get(target_id, True):
+        message = random.choice(content["duas"] + content["adhkar"] + content["hadiths"])
+        line_bot_api.push_message(target_id, TextSendMessage(text=message))
         return
 
-    if user_text.lower() == "إيقاف":
-        notify_status[target_id] = False
+    if text.lower() == "إيقاف":
+        data["notify"][target_id] = False
         save_data()
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف الإشعارات التلقائية"))
         return
 
-    if user_text.lower() == "تشغيل":
-        notify_status[target_id] = True
+    if text.lower() == "تشغيل":
+        data["notify"][target_id] = True
         save_data()
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم تفعيل الإشعارات التلقائية"))
         return
 
-    if user_text == "تسبيح":
-        counts = tasbih_counts[user_id]
-        status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-        return
-
-    if user_text in ("سبحان الله", "الحمد لله", "الله أكبر"):
-        tasbih_counts[user_id][user_text] += 1
-        save_data()
-        counts = tasbih_counts[user_id]
-        status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT, threaded=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
