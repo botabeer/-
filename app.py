@@ -5,6 +5,7 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import os, random, json, threading, time
 from dotenv import load_dotenv
 
+# ---------------- إعداد البوت ---------------- #
 load_dotenv()
 app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
@@ -33,10 +34,11 @@ def save_data():
 
 target_groups, target_users, tasbih_counts = load_data()
 
+# ---------------- تحميل المحتوى ---------------- #
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
     content = json.load(f)
 
-# ---------------- إرسال عشوائي ---------------- #
+# ---------------- إرسال رسائل عشوائية ---------------- #
 def send_random_message():
     category = random.choice(["duas", "verses", "hadiths"])
     message = random.choice(content[category])
@@ -50,7 +52,7 @@ def send_random_message():
 def message_loop():
     while True:
         send_random_message()
-        time.sleep(random.randint(3600,5400))
+        time.sleep(random.randint(3600,5400))  # عشوائي بين ساعة و1.5 ساعة
 
 threading.Thread(target=message_loop, daemon=True).start()
 
@@ -92,37 +94,51 @@ def ensure_user_counts(uid):
 # ---------------- معالجة الرسائل ---------------- #
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    if event.source.type == "user":
-        target_id = event.source.user_id
-        if target_id not in target_users:
-            target_users.add(target_id)
-            message = random.choice(content[random.choice(["duas","verses","hadiths"])])
-            line_bot_api.push_message(target_id, TextSendMessage(text=message))
-    elif event.source.type == "group":
+    user_text = event.message.text.strip()
+    user_id = event.source.user_id
+
+    # تسجيل المستخدمين والقروبات لأول مرة
+    first_time = False
+    if hasattr(event.source, 'group_id') and event.source.group_id:
         target_id = event.source.group_id
         if target_id not in target_groups:
-            target_groups.add(target_id)
-            message = random.choice(content[random.choice(["duas","verses","hadiths"])])
-            line_bot_api.push_message(target_id, TextSendMessage(text=message))
+            first_time = True
+        target_groups.add(target_id)
     else:
-        return
+        target_id = user_id
+        if target_id not in target_users:
+            first_time = True
+        target_users.add(target_id)
+
     save_data()
-    ensure_user_counts(target_id)
-    if handle_links(event, target_id):
+    ensure_user_counts(user_id)
+
+    # إرسال رسالة عشوائية أول تواصل
+    if first_time:
+        category = random.choice(["duas", "verses", "hadiths"])
+        message = random.choice(content[category])
+        line_bot_api.push_message(target_id, TextSendMessage(text=message))
+
+    # حماية الروابط
+    if handle_links(event, user_id):
         return
-    user_text = event.message.text.strip()
-    if user_text == "مساعدة":
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الأوامر: تسبيح، سبحان الله، الحمد لله، الله أكبر"))
+
+    # أوامر محددة
+    if user_text.lower() == "مساعدة":
+        help_text = "الأوامر: تسبيح، سبحان الله، الحمد لله، الله أكبر"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
+
     if user_text == "تسبيح":
-        counts = tasbih_counts[target_id]
+        counts = tasbih_counts[user_id]
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
-    if user_text in ("سبحان الله","الحمد لله","الله أكبر"):
-        tasbih_counts[target_id][user_text] += 1
+
+    if user_text in ("سبحان الله", "الحمد لله", "الله أكبر"):
+        tasbih_counts[user_id][user_text] += 1
         save_data()
-        counts = tasbih_counts[target_id]
+        counts = tasbih_counts[user_id]
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
 
