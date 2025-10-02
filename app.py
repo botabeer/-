@@ -58,7 +58,7 @@ def send_random_message():
 def message_loop():
     while True:
         send_random_message()
-        time.sleep(random.randint(3600,5400))  # عشوائي بين ساعة و1.5 ساعة
+        time.sleep(random.randint(3600,5400))  # بين ساعة و1.5 ساعة
 
 threading.Thread(target=message_loop, daemon=True).start()
 
@@ -103,27 +103,27 @@ def handle_message(event):
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
-    # تحديد الـ target_id (مستخدم أو مجموعة)
+    # تسجيل المستخدمين والقروبات لأول مرة
+    first_time = False
     if hasattr(event.source, 'group_id') and event.source.group_id:
         target_id = event.source.group_id
+        if target_id not in target_groups:
+            first_time = True
         target_groups.add(target_id)
     else:
         target_id = user_id
+        if target_id not in target_users:
+            first_time = True
         target_users.add(target_id)
 
     save_data()
     ensure_user_counts(user_id)
 
-    # إرسال رسالة أول تواصل (إذا لم يتم إيقاف الإشعارات)
-    if target_id not in notifications_off:
-        first_message = False
-        if (hasattr(event.source, 'group_id') and event.source.group_id and target_id not in target_groups) or \
-           (not hasattr(event.source, 'group_id') and target_id not in target_users):
-            first_message = True
-        if first_message:
-            category = random.choice(["duas", "adhkar", "hadiths"])
-            message = random.choice(content.get(category, ["لا يوجد محتوى"]))
-            line_bot_api.push_message(target_id, TextSendMessage(text=message))
+    # إرسال رسالة عشوائية عند أول تواصل
+    if first_time and target_id not in notifications_off:
+        category = random.choice(["duas", "adhkar", "hadiths"])
+        message = random.choice(content.get(category, ["لا يوجد محتوى"]))
+        line_bot_api.push_message(target_id, TextSendMessage(text=message))
 
     # حماية الروابط
     if handle_links(event, user_id):
@@ -142,6 +142,13 @@ def handle_message(event):
         return
 
     if user_text.lower() == "ذكرني":
+        # إضافة المستخدم/المجموعة إذا لم تكن موجودة
+        if hasattr(event.source, 'group_id') and event.source.group_id:
+            target_groups.add(event.source.group_id)
+        else:
+            target_users.add(user_id)
+        save_data()
+
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
         all_ids = list(target_groups) + list(target_users)
