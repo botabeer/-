@@ -108,22 +108,25 @@ def handle_message(event):
     if hasattr(event.source, 'group_id') and event.source.group_id:
         target_id = event.source.group_id
         if target_id not in target_groups:
+            target_groups.add(target_id)
             first_time = True
-        target_groups.add(target_id)
     else:
         target_id = user_id
         if target_id not in target_users:
+            target_users.add(target_id)
             first_time = True
-        target_users.add(target_id)
 
     save_data()
     ensure_user_counts(user_id)
 
-    # إرسال رسالة عشوائية عند أول تواصل
+    # إرسال رسالة عند أول تواصل
     if first_time and target_id not in notifications_off:
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
-        line_bot_api.push_message(target_id, TextSendMessage(text=message))
+        try:
+            line_bot_api.push_message(target_id, TextSendMessage(text=message))
+        except:
+            pass
 
     # حماية الروابط
     if handle_links(event, user_id):
@@ -134,7 +137,6 @@ def handle_message(event):
         help_text = """أوامر البوت المتاحة:
 تسبيح
    - عرض عدد التسبيحات لكل كلمة لكل مستخدم.
-
 سبحان الله / الحمد لله / الله أكبر
    - زيادة عدد التسبيحات لكل كلمة.
 """
@@ -142,13 +144,6 @@ def handle_message(event):
         return
 
     if user_text.lower() == "ذكرني":
-        # إضافة المستخدم/المجموعة إذا لم تكن موجودة
-        if hasattr(event.source, 'group_id') and event.source.group_id:
-            target_groups.add(event.source.group_id)
-        else:
-            target_users.add(user_id)
-        save_data()
-
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
         all_ids = list(target_groups) + list(target_users)
