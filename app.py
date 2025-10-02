@@ -113,7 +113,7 @@ def handle_message(event):
     save_data()
     ensure_user_counts(user_id)
 
-    # إرسال رسالة عشوائية أول تواصل
+    # إرسال رسالة عشوائية عند أول تواصل
     if first_time:
         category = random.choice(["duas", "verses", "hadiths"])
         message = random.choice(content[category])
@@ -139,7 +139,7 @@ def handle_message(event):
         # الرد للشخص الذي كتب المساعدة
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
 
-        # إرسال رسالة عشوائية لكل المسجلين
+        # إرسال رسالة عشوائية لجميع المسجلين
         category = random.choice(["duas", "verses", "hadiths"])
         message = random.choice(content[category])
         all_ids = list(target_groups) + list(target_users)
