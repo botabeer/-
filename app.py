@@ -43,9 +43,9 @@ target_groups, target_users, tasbih_counts, notifications_off = load_data()
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
     content = json.load(f)
 
-# ---------------- إرسال رسائل عشوائية تلقائية ---------------- #
+# ---------------- إرسال رسائل عشوائية ---------------- #
 def send_random_message():
-    category = random.choice(["duas", "adhkar", "hadiths"])
+    category = random.choice(["duas", "verses", "hadiths"])
     message = random.choice(content[category])
     all_ids = list(target_groups) + list(target_users)
     for tid in all_ids:
@@ -58,7 +58,7 @@ def send_random_message():
 def message_loop():
     while True:
         send_random_message()
-        time.sleep(random.randint(3600, 5400))  # بين ساعة و1.5 ساعة
+        time.sleep(random.randint(3600,5400))  # عشوائي بين ساعة و1.5 ساعة
 
 threading.Thread(target=message_loop, daemon=True).start()
 
@@ -119,12 +119,11 @@ def handle_message(event):
     save_data()
     ensure_user_counts(user_id)
 
-    # إرسال رسالة عشوائية أول تواصل
-    if first_time:
-        category = random.choice(["duas", "adhkar", "hadiths"])
+    # إرسال رسالة عشوائية عند أول تواصل
+    if first_time and target_id not in notifications_off:
+        category = random.choice(["duas", "verses", "hadiths"])
         message = random.choice(content[category])
-        if target_id not in notifications_off:
-            line_bot_api.push_message(target_id, TextSendMessage(text=message))
+        line_bot_api.push_message(target_id, TextSendMessage(text=message))
 
     # حماية الروابط
     if handle_links(event, user_id):
@@ -132,19 +131,16 @@ def handle_message(event):
 
     # أوامر محددة
     if user_text.lower() == "مساعدة":
-        help_text = """أوامر البوت:
+        help_text = """أوامر البوت المتاحة:
 
 1. ذكرني
-   - يرسل دعاء أو حديث أو ذكر عشوائي لجميع المستخدمين والقروبات.
+   - يرسل دعاء أو حديث أو ذكر عشوائي لجميع المستخدمين.
 
 2. تسبيح
-   - يعرض عدد التسبيحات لكل كلمة:
-     • سبحان الله
-     • الحمد لله
-     • الله أكبر
+   - عرض عدد التسبيحات لكل كلمة لكل مستخدم.
 
 3. سبحان الله / الحمد لله / الله أكبر
-   - يزيد عدد التسبيحات للكلمة التي كتبتها.
+   - زيادة عدد التسبيحات لكل كلمة.
 
 4. الإشعارات
    - إيقاف: يوقف الإشعارات التلقائية
@@ -154,7 +150,7 @@ def handle_message(event):
         return
 
     if user_text.lower() == "ذكرني":
-        category = random.choice(["duas", "adhkar", "hadiths"])
+        category = random.choice(["duas", "verses", "hadiths"])
         message = random.choice(content[category])
         all_ids = list(target_groups) + list(target_users)
         for tid in all_ids:
