@@ -2,9 +2,8 @@ from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import os, random, json
+import os, random, json, threading, time
 from dotenv import load_dotenv
-from apscheduler.schedulers.background import BackgroundScheduler
 
 # ---------------- إعداد البوت ---------------- #
 load_dotenv()
@@ -23,13 +22,17 @@ CONTENT_FILE = "content.json"
 def load_data():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({"users": [], "groups": [], "rooms": [], "tasbih": {}}, f, ensure_ascii=False, indent=2)
-        return set(), set(), set(), {}
+            json.dump({"users": [], "groups": [], "tasbih": {}}, f, ensure_ascii=False, indent=2)
+        return set(), set(), {}
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-        return set(data.get("groups", [])), set(data.get("users", [])), set(data.get("rooms", [])), data.get("tasbih", {})
+        return set(data.get("groups", [])), set(data.get("users", [])), data.get("tasbih", {})
 
-target_groups, target_users, target_rooms, tasbih_counts = load_data()
+def save_data():
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump({"groups": list(target_groups), "users": list(target_users), "tasbih": tasbih_counts}, f, ensure_ascii=False, indent=2)
+
+target_groups, target_users, tasbih_counts = load_data()
 
 # ---------------- تحميل المحتوى ---------------- #
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
@@ -38,17 +41,20 @@ with open(CONTENT_FILE, "r", encoding="utf-8") as f:
 # ---------------- إرسال رسائل عشوائية ---------------- #
 def send_random_message():
     category = random.choice(["duas", "verses", "hadiths"])
-    message = random.choice(content.get(category, []))
-    all_ids = list(target_groups) + list(target_users) + list(target_rooms)
+    message = random.choice(content[category])
+    all_ids = list(target_groups) + list(target_users)
     for tid in all_ids:
         try:
             line_bot_api.push_message(tid, TextSendMessage(text=message))
-        except Exception as e:
-            print(f"خطأ في إرسال الرسالة: {e}")
+        except:
+            pass
 
-scheduler = BackgroundScheduler()
-scheduler.add_job(send_random_message, "interval", minutes=60)
-scheduler.start()
+def message_loop():
+    while True:
+        send_random_message()
+        time.sleep(random.randint(3600,5400))  # عشوائي بين ساعة و1.5 ساعة
+
+threading.Thread(target=message_loop, daemon=True).start()
 
 # ---------------- Webhook ---------------- #
 @app.route("/", methods=["GET"])
@@ -69,8 +75,11 @@ def callback():
 links_count = {}
 def handle_links(event, user_id):
     text = event.message.text.strip()
-    if any(x in text for x in ["http://", "https://", "www."]):
-        links_count[user_id] = links_count.get(user_id, 0) + 1
+    if "http://" in text or "https://" in text or "www." in text:
+        if user_id not in links_count:
+            links_count[user_id] = 1
+        else:
+            links_count[user_id] += 1
         if links_count[user_id] >= 2:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
         return True
@@ -88,18 +97,13 @@ def handle_message(event):
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
-    # تسجيل المستخدمين والقروبات/الرووم
+    # تسجيل المستخدمين والقروبات لأول مرة
     first_time = False
     if hasattr(event.source, 'group_id') and event.source.group_id:
         target_id = event.source.group_id
         if target_id not in target_groups:
             first_time = True
         target_groups.add(target_id)
-    elif hasattr(event.source, 'room_id') and event.source.room_id:
-        target_id = event.source.room_id
-        if target_id not in target_rooms:
-            first_time = True
-        target_rooms.add(target_id)
     else:
         target_id = user_id
         if target_id not in target_users:
@@ -112,11 +116,8 @@ def handle_message(event):
     # إرسال رسالة عشوائية أول تواصل
     if first_time:
         category = random.choice(["duas", "verses", "hadiths"])
-        message = random.choice(content.get(category, []))
-        try:
-            line_bot_api.push_message(target_id, TextSendMessage(text=message))
-        except:
-            pass
+        message = random.choice(content[category])
+        line_bot_api.push_message(target_id, TextSendMessage(text=message))
 
     # حماية الروابط
     if handle_links(event, user_id):
@@ -145,9 +146,7 @@ def handle_message(event):
         return
 
     if user_text in ("سبحان الله", "الحمد لله", "الله أكبر"):
-        counts = tasbih_counts[user_id]
-        if counts[user_text] < tasbih_limits:
-            tasbih_counts[user_id][user_text] += 1
+        tasbih_counts[user_id][user_text] += 1
         save_data()
         counts = tasbih_counts[user_id]
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
