@@ -2,7 +2,7 @@ from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import os, random, json, threading, time
+import os, json, random, threading, time
 from dotenv import load_dotenv
 
 # ---------------- إعداد البوت ---------------- #
@@ -22,11 +22,11 @@ CONTENT_FILE = "content.json"
 def load_data():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({"users": [], "groups": [], "tasbih": {}, "notifications": {}}, f, ensure_ascii=False, indent=2)
+            json.dump({"users": [], "groups": [], "tasbih": {}, "notify": {}}, f, ensure_ascii=False, indent=2)
         return set(), set(), {}, {}
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-        return set(data.get("groups", [])), set(data.get("users", [])), data.get("tasbih", {}), data.get("notifications", {})
+        return set(data.get("groups", [])), set(data.get("users", [])), data.get("tasbih", {}), data.get("notify", {})
 
 def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -34,10 +34,10 @@ def save_data():
             "groups": list(target_groups),
             "users": list(target_users),
             "tasbih": tasbih_counts,
-            "notifications": notifications
+            "notify": notify_status
         }, f, ensure_ascii=False, indent=2)
 
-target_groups, target_users, tasbih_counts, notifications = load_data()
+target_groups, target_users, tasbih_counts, notify_status = load_data()
 
 # ---------------- تحميل المحتوى ---------------- #
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
@@ -48,7 +48,8 @@ def send_random_message():
     message = random.choice(content["duas"] + content["adhkar"] + content["hadiths"])
     all_ids = list(target_groups) + list(target_users)
     for tid in all_ids:
-        if notifications.get(tid, True):  # تحقق من الإشعارات
+        # إرسال فقط لمن لم يوقف الإشعارات
+        if notify_status.get(tid, True):
             try:
                 line_bot_api.push_message(tid, TextSendMessage(text=message))
             except:
@@ -57,7 +58,7 @@ def send_random_message():
 def message_loop():
     while True:
         send_random_message()
-        time.sleep(random.randint(3600,5400))  # بين ساعة و1.5 ساعة
+        time.sleep(random.randint(3600, 5400))  # بين ساعة و1.5 ساعة
 
 threading.Thread(target=message_loop, daemon=True).start()
 
@@ -115,13 +116,15 @@ def handle_message(event):
             first_time = True
         target_users.add(target_id)
 
+    # افتراضياً الإشعارات مفعلة
+    if target_id not in notify_status:
+        notify_status[target_id] = True
+
     save_data()
     ensure_user_counts(user_id)
-    if target_id not in notifications:
-        notifications[target_id] = True
 
     # إرسال رسالة عشوائية عند أول تواصل
-    if first_time and notifications.get(target_id, True):
+    if first_time:
         message = random.choice(content["duas"] + content["adhkar"] + content["hadiths"])
         line_bot_api.push_message(target_id, TextSendMessage(text=message))
 
@@ -131,15 +134,38 @@ def handle_message(event):
 
     # أوامر محددة
     if user_text.lower() == "مساعدة":
-        help_text = (
-            "أوامر البوت:\n\n"
-            "1. مساعدة  - عرض قائمة الأوامر.\n"
-            "2. تسبيح  - عرض عدد التسبيحات لكل كلمة.\n"
-            "3. سبحان الله / الحمد لله / الله أكبر  - زيادة عدد التسبيحات.\n"
-            "4. ذكرني  - إرسال دعاء/حديث/ذكر عشوائي لجميع المستخدمين.\n"
-            "5. إيقاف/تشغيل  - إيقاف أو إعادة تفعيل الإشعارات التلقائية لديك.\n"
-        )
+        help_text = """أوامر البوت:
+
+1. ذكرني
+   - يرسل لك دعاء/حديث/ذكر عشوائي
+2. تسبيح
+   - عرض عدد التسبيحات لكل كلمة
+3. سبحان الله / الحمد لله / الله أكبر
+   - زيادة عدد التسبيحات لكل كلمة
+4. إيقاف
+   - يوقف الإشعارات التلقائية
+5. تشغيل
+   - يعيد تفعيل الإشعارات التلقائية
+"""
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
+        return
+
+    if user_text.lower() == "ذكرني":
+        if notify_status.get(target_id, True):
+            message = random.choice(content["duas"] + content["adhkar"] + content["hadiths"])
+            line_bot_api.push_message(target_id, TextSendMessage(text=message))
+        return
+
+    if user_text.lower() == "إيقاف":
+        notify_status[target_id] = False
+        save_data()
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف الإشعارات التلقائية"))
+        return
+
+    if user_text.lower() == "تشغيل":
+        notify_status[target_id] = True
+        save_data()
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم تفعيل الإشعارات التلقائية"))
         return
 
     if user_text == "تسبيح":
@@ -154,28 +180,6 @@ def handle_message(event):
         counts = tasbih_counts[user_id]
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-        return
-
-    if user_text.lower() == "ذكرني":
-        message = random.choice(content["duas"] + content["adhkar"] + content["hadiths"])
-        all_ids = list(target_groups) + list(target_users)
-        for tid in all_ids:
-            if notifications.get(tid, True):
-                try:
-                    line_bot_api.push_message(tid, TextSendMessage(text=message))
-                except:
-                    pass
-        return
-
-    if user_text.lower() in ("إيقاف", "تشغيل"):
-        if user_text.lower() == "إيقاف":
-            notifications[target_id] = False
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف الإشعارات التلقائية لديك."))
-        else:
-            notifications[target_id] = True
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إعادة تفعيل الإشعارات التلقائية لديك."))
-        save_data()
-        return
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, threaded=True)
