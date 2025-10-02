@@ -22,47 +22,37 @@ CONTENT_FILE = "content.json"
 def load_data():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({"users": [], "groups": [], "tasbih": {}, "notifications_off": []}, f, ensure_ascii=False, indent=2)
-        return set(), set(), {}, set()
+            json.dump({"users": [], "groups": [], "tasbih": {}}, f, ensure_ascii=False, indent=2)
+        return set(), set(), {}
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-        return set(data.get("groups", [])), set(data.get("users", [])), data.get("tasbih", {}), set(data.get("notifications_off", []))
+        return set(data.get("groups", [])), set(data.get("users", [])), data.get("tasbih", {})
 
 def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump({
-            "groups": list(target_groups),
-            "users": list(target_users),
-            "tasbih": tasbih_counts,
-            "notifications_off": list(notifications_off)
-        }, f, ensure_ascii=False, indent=2)
+        json.dump({"groups": list(target_groups), "users": list(target_users), "tasbih": tasbih_counts}, f, ensure_ascii=False, indent=2)
 
-target_groups, target_users, tasbih_counts, notifications_off = load_data()
+target_groups, target_users, tasbih_counts = load_data()
 
 # ---------------- تحميل المحتوى ---------------- #
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
     content = json.load(f)
 
-# ---------------- إرسال رسالة للجميع ---------------- #
-def send_to_all(message):
+# ---------------- إرسال رسائل عشوائية ---------------- #
+def send_random_message():
+    category = random.choice(["duas", "verses", "hadiths"])
+    message = random.choice(content[category])
     all_ids = list(target_groups) + list(target_users)
     for tid in all_ids:
-        if tid not in notifications_off:
-            try:
-                line_bot_api.push_message(tid, TextSendMessage(text=message))
-            except:
-                pass
-
-# ---------------- إرسال رسائل عشوائية تلقائية ---------------- #
-def send_random_message():
-    category = random.choice(["duas", "adhkar", "hadiths"])
-    message = random.choice(content[category])
-    send_to_all(message)
+        try:
+            line_bot_api.push_message(tid, TextSendMessage(text=message))
+        except:
+            pass
 
 def message_loop():
     while True:
         send_random_message()
-        time.sleep(random.randint(3600,5400))  # بين ساعة و1.5 ساعة
+        time.sleep(random.randint(3600,5400))  # عشوائي بين ساعة و1.5 ساعة
 
 threading.Thread(target=message_loop, daemon=True).start()
 
@@ -108,19 +98,24 @@ def handle_message(event):
     user_id = event.source.user_id
 
     # تسجيل المستخدمين والقروبات لأول مرة
+    first_time = False
     if hasattr(event.source, 'group_id') and event.source.group_id:
         target_id = event.source.group_id
+        if target_id not in target_groups:
+            first_time = True
         target_groups.add(target_id)
     else:
         target_id = user_id
+        if target_id not in target_users:
+            first_time = True
         target_users.add(target_id)
 
     save_data()
     ensure_user_counts(user_id)
 
     # إرسال رسالة عشوائية عند أول تواصل
-    if target_id not in notifications_off:
-        category = random.choice(["duas", "adhkar", "hadiths"])
+    if first_time:
+        category = random.choice(["duas", "verses", "hadiths"])
         message = random.choice(content[category])
         line_bot_api.push_message(target_id, TextSendMessage(text=message))
 
@@ -132,22 +127,30 @@ def handle_message(event):
     if user_text.lower() == "مساعدة":
         help_text = """أوامر البوت المتاحة:
 
-تسبيح
+1. مساعدة
+   - عرض قائمة الأوامر.
+
+2. تسبيح
    - عرض عدد التسبيحات لكل كلمة لكل مستخدم.
 
-سبحان الله / الحمد لله / الله أكبر
+3. سبحان الله / الحمد لله / الله أكبر
    - زيادة عدد التسبيحات لكل كلمة.
 """
+        # الرد للشخص الذي كتب المساعدة
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
-        return
 
-    if user_text.lower() == "ذكرني":
-        category = random.choice(["duas", "adhkar", "hadiths"])
+        # إرسال رسالة عشوائية لجميع المسجلين
+        category = random.choice(["duas", "verses", "hadiths"])
         message = random.choice(content[category])
-        send_to_all(message)
+        all_ids = list(target_groups) + list(target_users)
+        for tid in all_ids:
+            try:
+                line_bot_api.push_message(tid, TextSendMessage(text=message))
+            except:
+                pass
         return
 
-    if user_text.lower() == "تسبيح":
+    if user_text == "تسبيح":
         counts = tasbih_counts[user_id]
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
@@ -159,20 +162,6 @@ def handle_message(event):
         counts = tasbih_counts[user_id]
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-        return
-
-    if user_text.lower() == "إيقاف":
-        notifications_off.add(target_id)
-        save_data()
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف الإشعارات التلقائية"))
-        return
-
-    if user_text.lower() == "تشغيل":
-        if target_id in notifications_off:
-            notifications_off.remove(target_id)
-            save_data()
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إعادة تفعيل الإشعارات التلقائية"))
-        return
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, threaded=True)
