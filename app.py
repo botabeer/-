@@ -119,14 +119,17 @@ def handle_message(event):
     save_data()
     ensure_user_counts(user_id)
 
-    # إرسال رسالة عند أول تواصل
+    # إرسال ذكرني تلقائيًا عند أول رسالة إذا لم يتم إيقاف الإشعارات
     if first_time and target_id not in notifications_off:
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
-        try:
-            line_bot_api.push_message(target_id, TextSendMessage(text=message))
-        except:
-            pass
+        all_ids = list(target_groups) + list(target_users)
+        for tid in all_ids:
+            if tid not in notifications_off:
+                try:
+                    line_bot_api.push_message(tid, TextSendMessage(text=message))
+                except:
+                    pass
 
     # حماية الروابط
     if handle_links(event, user_id):
@@ -137,8 +140,13 @@ def handle_message(event):
         help_text = """أوامر البوت المتاحة:
 تسبيح
    - عرض عدد التسبيحات لكل كلمة لكل مستخدم.
+
 سبحان الله / الحمد لله / الله أكبر
    - زيادة عدد التسبيحات لكل كلمة.
+
+الإشعارات:
+   - إيقاف: يوقف الإشعارات التلقائية.
+   - تشغيل: يعيد تفعيل الإشعارات التلقائية.
 """
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
