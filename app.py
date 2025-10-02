@@ -5,7 +5,6 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import os, random, json
 from dotenv import load_dotenv
 
-# إعداد البوت
 load_dotenv()
 app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
@@ -15,7 +14,6 @@ PORT = int(os.getenv("PORT", 5000))
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# ملفات البيانات
 DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
 
@@ -38,11 +36,9 @@ def save_data():
 
 target_groups, target_users, notifications_off = load_data()
 
-# تحميل المحتوى
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
     content = json.load(f)
 
-# Webhook
 @app.route("/", methods=["GET"])
 def home():
     return "Bot is running", 200
@@ -57,7 +53,6 @@ def callback():
         print("خطأ في التوقيع")
     return "OK", 200
 
-# التعامل مع الرسائل
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_text = event.message.text.strip()
@@ -78,7 +73,7 @@ def handle_message(event):
 
     save_data()
 
-    # عند أول رسالة لأي مستخدم أو قروب: إرسال ذكر لجميع المسجلين
+    # عند أول رسالة، يرسل ذكر عشوائي للجميع
     if first_time:
         all_ids = list(target_groups) + list(target_users)
         category = random.choice(["duas", "adhkar", "hadiths"])
@@ -89,9 +84,11 @@ def handle_message(event):
                     line_bot_api.push_message(tid, TextSendMessage(text=message))
                 except:
                     pass
+        # نرسل رد للمستخدم لتأكيد التسجيل
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم تسجيلك بنجاح وسيصلك ذكر عشوائي."))
 
-    # أمر "ذكرني" يرسل للجميع
-    if user_text.lower() == "ذكرني":
+    # أمر "ذكرني" يرسل لجميع المسجلين
+    elif user_text.lower() == "ذكرني":
         all_ids = list(target_groups) + list(target_users)
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content[category])
@@ -101,7 +98,8 @@ def handle_message(event):
                     line_bot_api.push_message(tid, TextSendMessage(text=message))
                 except:
                     pass
-        return
+        # نرسل تأكيد للمستخدم
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إرسال ذكر للجميع."))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, threaded=True)
