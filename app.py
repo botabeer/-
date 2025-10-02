@@ -136,7 +136,18 @@ def handle_message(event):
 3. سبحان الله / الحمد لله / الله أكبر
    - زيادة عدد التسبيحات لكل كلمة.
 """
+        # الرد للشخص الذي كتب المساعدة
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
+
+        # إرسال رسالة عشوائية لكل المسجلين
+        category = random.choice(["duas", "verses", "hadiths"])
+        message = random.choice(content[category])
+        all_ids = list(target_groups) + list(target_users)
+        for tid in all_ids:
+            try:
+                line_bot_api.push_message(tid, TextSendMessage(text=message))
+            except:
+                pass
         return
 
     if user_text == "تسبيح":
