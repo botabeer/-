@@ -43,25 +43,21 @@ target_groups, target_users, tasbih_counts, notifications_off = load_data()
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
     content = json.load(f)
 
-# ---------------- إرسال رسائل عشوائية ---------------- #
-def rand_msg():
-    category = random.choice(["duas", "adhkar", "hadiths"])
-    return random.choice(content[category])
+# ---------------- إرسال رسالة للجميع ---------------- #
+def send_to_all(message):
+    all_ids = list(target_groups) + list(target_users)
+    for tid in all_ids:
+        if tid not in notifications_off:
+            try:
+                line_bot_api.push_message(tid, TextSendMessage(text=message))
+            except:
+                pass
 
+# ---------------- إرسال رسائل عشوائية تلقائية ---------------- #
 def send_random_message():
-    message = rand_msg()
-    for uid in target_users:
-        if uid not in notifications_off:
-            try:
-                line_bot_api.push_message(uid, TextSendMessage(text=message))
-            except:
-                pass
-    for gid in target_groups:
-        if gid not in notifications_off:
-            try:
-                line_bot_api.push_message(gid, TextSendMessage(text=message))
-            except:
-                pass
+    category = random.choice(["duas", "adhkar", "hadiths"])
+    message = random.choice(content[category])
+    send_to_all(message)
 
 def message_loop():
     while True:
@@ -112,36 +108,21 @@ def handle_message(event):
     user_id = event.source.user_id
 
     # تسجيل المستخدمين والقروبات لأول مرة
-    first_time = False
     if hasattr(event.source, 'group_id') and event.source.group_id:
         target_id = event.source.group_id
-        if target_id not in target_groups:
-            first_time = True
         target_groups.add(target_id)
     else:
         target_id = user_id
-        if target_id not in target_users:
-            first_time = True
         target_users.add(target_id)
 
     save_data()
     ensure_user_counts(user_id)
 
-    # إرسال رسالة عشوائية عند أول تواصل تلقائي
-    if first_time and target_id not in notifications_off:
-        message = rand_msg()
-        for uid in target_users:
-            if uid not in notifications_off:
-                try:
-                    line_bot_api.push_message(uid, TextSendMessage(text=message))
-                except:
-                    pass
-        for gid in target_groups:
-            if gid not in notifications_off:
-                try:
-                    line_bot_api.push_message(gid, TextSendMessage(text=message))
-                except:
-                    pass
+    # إرسال رسالة عشوائية عند أول تواصل
+    if target_id not in notifications_off:
+        category = random.choice(["duas", "adhkar", "hadiths"])
+        message = random.choice(content[category])
+        line_bot_api.push_message(target_id, TextSendMessage(text=message))
 
     # حماية الروابط
     if handle_links(event, user_id):
@@ -151,36 +132,19 @@ def handle_message(event):
     if user_text.lower() == "مساعدة":
         help_text = """أوامر البوت المتاحة:
 
-1. ذكرني
-   - يرسل دعاء أو حديث أو ذكر عشوائي لجميع المستخدمين.
-
-2. تسبيح
+تسبيح
    - عرض عدد التسبيحات لكل كلمة لكل مستخدم.
 
-3. سبحان الله / الحمد لله / الله أكبر
+سبحان الله / الحمد لله / الله أكبر
    - زيادة عدد التسبيحات لكل كلمة.
-
-4. الإشعارات:
-   - إيقاف: يوقف الإشعارات التلقائية.
-   - تشغيل: يعيد تفعيل الإشعارات التلقائية.
 """
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
 
     if user_text.lower() == "ذكرني":
-        message = rand_msg()
-        for uid in target_users:
-            if uid not in notifications_off:
-                try:
-                    line_bot_api.push_message(uid, TextSendMessage(text=message))
-                except:
-                    pass
-        for gid in target_groups:
-            if gid not in notifications_off:
-                try:
-                    line_bot_api.push_message(gid, TextSendMessage(text=message))
-                except:
-                    pass
+        category = random.choice(["duas", "adhkar", "hadiths"])
+        message = random.choice(content[category])
+        send_to_all(message)
         return
 
     if user_text.lower() == "تسبيح":
