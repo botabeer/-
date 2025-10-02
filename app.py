@@ -26,10 +26,7 @@ def load_data():
         return set(), set(), {}, {}
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-        return (set(data.get("groups", [])),
-                set(data.get("users", [])),
-                data.get("tasbih", {}),
-                data.get("notifications", {}))
+        return set(data.get("groups", [])), set(data.get("users", [])), data.get("tasbih", {}), data.get("notifications", {})
 
 def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -46,12 +43,12 @@ target_groups, target_users, tasbih_counts, notifications = load_data()
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
     content = json.load(f)
 
-# ---------------- إرسال رسائل عشوائية تلقائية ---------------- #
+# ---------------- إرسال رسائل عشوائية ---------------- #
 def send_random_message():
     message = random.choice(content["duas"] + content["adhkar"] + content["hadiths"])
-    all_ids = list(target_users) + list(target_groups)
+    all_ids = list(target_groups) + list(target_users)
     for tid in all_ids:
-        if notifications.get(tid, True):  # تحقق إذا الإشعارات مفعلة
+        if notifications.get(tid, True):  # تحقق من الإشعارات
             try:
                 line_bot_api.push_message(tid, TextSendMessage(text=message))
             except:
@@ -60,7 +57,7 @@ def send_random_message():
 def message_loop():
     while True:
         send_random_message()
-        time.sleep(random.randint(3600,5400))  # كل ساعة إلى ساعة ونصف
+        time.sleep(random.randint(3600,5400))  # بين ساعة و1.5 ساعة
 
 threading.Thread(target=message_loop, daemon=True).start()
 
@@ -84,7 +81,10 @@ links_count = {}
 def handle_links(event, user_id):
     text = event.message.text.strip()
     if "http://" in text or "https://" in text or "www." in text:
-        links_count[user_id] = links_count.get(user_id, 0) + 1
+        if user_id not in links_count:
+            links_count[user_id] = 1
+        else:
+            links_count[user_id] += 1
         if links_count[user_id] >= 2:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
         return True
@@ -114,13 +114,13 @@ def handle_message(event):
         if target_id not in target_users:
             first_time = True
         target_users.add(target_id)
-        if target_id not in notifications:
-            notifications[target_id] = True
 
     save_data()
     ensure_user_counts(user_id)
+    if target_id not in notifications:
+        notifications[target_id] = True
 
-    # إرسال رسالة عشوائية أول تواصل
+    # إرسال رسالة عشوائية عند أول تواصل
     if first_time and notifications.get(target_id, True):
         message = random.choice(content["duas"] + content["adhkar"] + content["hadiths"])
         line_bot_api.push_message(target_id, TextSendMessage(text=message))
@@ -132,12 +132,12 @@ def handle_message(event):
     # أوامر محددة
     if user_text.lower() == "مساعدة":
         help_text = (
-            "أوامر البوت:\n"
-            "1. مساعدة - عرض قائمة الأوامر.\n"
-            "2. تسبيح - عرض عدد التسبيحات.\n"
-            "3. سبحان الله / الحمد لله / الله أكبر - زيادة عدد التسبيحات.\n"
-            "4. ذكرني - يرسل دعاء/حديث/ذكر للجميع.\n"
-            "5. إيقاف/تشغيل - إيقاف أو تشغيل الإشعارات التلقائية.\n"
+            "أوامر البوت:\n\n"
+            "1. مساعدة  - عرض قائمة الأوامر.\n"
+            "2. تسبيح  - عرض عدد التسبيحات لكل كلمة.\n"
+            "3. سبحان الله / الحمد لله / الله أكبر  - زيادة عدد التسبيحات.\n"
+            "4. ذكرني  - إرسال دعاء/حديث/ذكر عشوائي لجميع المستخدمين.\n"
+            "5. إيقاف/تشغيل  - إيقاف أو إعادة تفعيل الإشعارات التلقائية لديك.\n"
         )
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
@@ -158,22 +158,23 @@ def handle_message(event):
 
     if user_text.lower() == "ذكرني":
         message = random.choice(content["duas"] + content["adhkar"] + content["hadiths"])
-        all_ids = list(target_users) + list(target_groups)
+        all_ids = list(target_groups) + list(target_users)
         for tid in all_ids:
             if notifications.get(tid, True):
-                line_bot_api.push_message(tid, TextSendMessage(text=message))
+                try:
+                    line_bot_api.push_message(tid, TextSendMessage(text=message))
+                except:
+                    pass
         return
 
-    if user_text.lower() == "إيقاف":
-        notifications[target_id] = False
+    if user_text.lower() in ("إيقاف", "تشغيل"):
+        if user_text.lower() == "إيقاف":
+            notifications[target_id] = False
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف الإشعارات التلقائية لديك."))
+        else:
+            notifications[target_id] = True
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إعادة تفعيل الإشعارات التلقائية لديك."))
         save_data()
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف الإشعارات التلقائية"))
-        return
-
-    if user_text.lower() == "تشغيل":
-        notifications[target_id] = True
-        save_data()
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم تفعيل الإشعارات التلقائية"))
         return
 
 if __name__ == "__main__":
