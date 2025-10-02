@@ -58,7 +58,7 @@ def send_random_message():
 def message_loop():
     while True:
         send_random_message()
-        time.sleep(random.randint(3600,5400))  # عشوائي بين ساعة و1.5 ساعة
+        time.sleep(random.randint(3600, 5400))  # بين ساعة و1.5 ساعة
 
 threading.Thread(target=message_loop, daemon=True).start()
 
@@ -82,20 +82,16 @@ links_count = {}
 def handle_links(event, user_id):
     text = event.message.text.strip()
     if "http://" in text or "https://" in text or "www." in text:
-        if user_id not in links_count:
-            links_count[user_id] = 1
-        else:
-            links_count[user_id] += 1
+        links_count[user_id] = links_count.get(user_id, 0) + 1
         if links_count[user_id] >= 2:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
         return True
     return False
 
 # ---------------- تسبيح ---------------- #
-tasbih_limits = 33
 def ensure_user_counts(uid):
     if uid not in tasbih_counts:
-        tasbih_counts[uid] = {"سبحان الله":0, "الحمد لله":0, "الله أكبر":0}
+        tasbih_counts[uid] = {"سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
 
 # ---------------- معالجة الرسائل ---------------- #
 @handler.add(MessageEvent, message=TextMessage)
@@ -103,7 +99,7 @@ def handle_message(event):
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
-    # تسجيل المستخدمين والقروبات لأول مرة
+    # تسجيل مستخدم أو قروب
     first_time = False
     if hasattr(event.source, 'group_id') and event.source.group_id:
         target_id = event.source.group_id
@@ -119,7 +115,7 @@ def handle_message(event):
     save_data()
     ensure_user_counts(user_id)
 
-    # إرسال رسالة عشوائية عند أول تواصل
+    # رسالة ترحيب أول مرة
     if first_time and target_id not in notifications_off:
         category = random.choice(["duas", "verses", "hadiths"])
         message = random.choice(content[category])
@@ -129,27 +125,29 @@ def handle_message(event):
     if handle_links(event, user_id):
         return
 
-    # أوامر محددة
-    if user_text.lower() == "مساعدة":
-        help_text = """أوامر البوت المتاحة:
+    # أوامر البوت
+    if user_text == "مساعدة":
+        help_text = """أوامر البوت:
 
-1. ذكرني
-   - يرسل دعاء أو حديث أو ذكر عشوائي لجميع المستخدمين.
+1. ذكرني  
+   - يرسل ذكر أو دعاء عشوائي للجميع.  
 
-2. تسبيح
-   - عرض عدد التسبيحات لكل كلمة لكل مستخدم.
+2. تسبيح  
+   - عرض عدد التسبيحات.  
 
-3. سبحان الله / الحمد لله / الله أكبر
-   - زيادة عدد التسبيحات لكل كلمة.
+3. سبحان الله / الحمد لله / الله أكبر  
+   - لزيادة العد.  
 
-4. الإشعارات
-   - إيقاف: يوقف الإشعارات التلقائية
-   - تشغيل: يعيد تفعيل الإشعارات التلقائية
+4. إيقاف  
+   - يوقف الإشعارات التلقائية.  
+
+5. تشغيل  
+   - يعيد تفعيل الإشعارات التلقائية.  
 """
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
 
-    if user_text.lower() == "ذكرني":
+    if user_text == "ذكرني":
         category = random.choice(["duas", "verses", "hadiths"])
         message = random.choice(content[category])
         all_ids = list(target_groups) + list(target_users)
@@ -161,7 +159,7 @@ def handle_message(event):
                     pass
         return
 
-    if user_text.lower() == "تسبيح":
+    if user_text == "تسبيح":
         counts = tasbih_counts[user_id]
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
@@ -175,18 +173,18 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
 
-    if user_text.lower() == "إيقاف":
+    if user_text == "إيقاف":
         notifications_off.add(target_id)
         save_data()
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف الإشعارات التلقائية"))
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ تم إيقاف الإشعارات التلقائية"))
         return
 
-    if user_text.lower() == "تشغيل":
-        if target_id in notifications_off:
-            notifications_off.remove(target_id)
-            save_data()
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إعادة تفعيل الإشعارات التلقائية"))
+    if user_text == "تشغيل":
+        notifications_off.discard(target_id)
+        save_data()
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ تم إعادة تفعيل الإشعارات التلقائية"))
         return
 
+# ---------------- تشغيل السيرفر ---------------- #
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, threaded=True)
