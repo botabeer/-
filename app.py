@@ -125,7 +125,17 @@ def handle_message(event):
 
     # أوامر محددة
     if user_text.lower() == "مساعدة":
-        help_text = "الأوامر: تسبيح، سبحان الله، الحمد لله، الله أكبر"
+        help_text = """أوامر البوت المتاحة:
+
+1. مساعدة
+   - عرض قائمة الأوامر.
+
+2. تسبيح
+   - عرض عدد التسبيحات لكل كلمة لكل مستخدم.
+
+3. سبحان الله / الحمد لله / الله أكبر
+   - زيادة عدد التسبيحات لكل كلمة.
+"""
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
 
