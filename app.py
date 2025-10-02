@@ -58,7 +58,7 @@ def send_random_message():
 def message_loop():
     while True:
         send_random_message()
-        time.sleep(random.randint(3600,5400))  # بين ساعة و1.5 ساعة
+        time.sleep(random.randint(3600,5400))  # عشوائي بين ساعة و1.5 ساعة
 
 threading.Thread(target=message_loop, daemon=True).start()
 
@@ -108,19 +108,19 @@ def handle_message(event):
     if hasattr(event.source, 'group_id') and event.source.group_id:
         target_id = event.source.group_id
         if target_id not in target_groups:
-            target_groups.add(target_id)
             first_time = True
+        target_groups.add(target_id)
     else:
         target_id = user_id
         if target_id not in target_users:
-            target_users.add(target_id)
             first_time = True
+        target_users.add(target_id)
 
     save_data()
     ensure_user_counts(user_id)
 
-    # إرسال ذكرني تلقائيًا عند أول رسالة إذا لم يتم إيقاف الإشعارات
-    if first_time and target_id not in notifications_off:
+    # إرسال رسالة عشوائية عند أول تواصل لجميع المسجلين
+    if first_time:
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
         all_ids = list(target_groups) + list(target_users)
@@ -143,10 +143,6 @@ def handle_message(event):
 
 سبحان الله / الحمد لله / الله أكبر
    - زيادة عدد التسبيحات لكل كلمة.
-
-الإشعارات:
-   - إيقاف: يوقف الإشعارات التلقائية.
-   - تشغيل: يعيد تفعيل الإشعارات التلقائية.
 """
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
