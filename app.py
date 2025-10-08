@@ -161,13 +161,22 @@ def handle_message(event):
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
 
-        all_ids = list(target_groups) + list(target_users)
         sent_count = 0
 
-        for tid in all_ids:
-            if tid not in notifications_off:
+        # أرسل لكل مستخدم
+        for uid in target_users:
+            if uid not in notifications_off:
                 try:
-                    line_bot_api.push_message(tid, TextSendMessage(text=message))
+                    line_bot_api.push_message(uid, TextSendMessage(text=message))
+                    sent_count += 1
+                except:
+                    pass
+
+        # أرسل لكل مجموعة
+        for gid in target_groups:
+            if gid not in notifications_off:
+                try:
+                    line_bot_api.push_message(gid, TextSendMessage(text=message))
                     sent_count += 1
                 except:
                     pass
