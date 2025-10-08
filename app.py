@@ -103,17 +103,14 @@ def handle_message(event):
     save_data()
     ensure_user_counts(user_id)
 
-    # ---------------- إرسال ذكر فورًا عند أول رسالة ---------------- #
+    # ---------------- إرسال ذكر، دعاء، أو حديث عند أول رسالة ---------------- #
     if first_time:
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
 
-        sent_count = 0
-
         # للمستخدم الحالي
         try:
             line_bot_api.push_message(user_id, TextSendMessage(text=message))
-            sent_count += 1
         except:
             pass
 
@@ -121,12 +118,10 @@ def handle_message(event):
         if gid:
             try:
                 line_bot_api.push_message(gid, TextSendMessage(text=message))
-                sent_count += 1
             except:
                 pass
 
-        # الرد للمستخدم ليؤكد التفعيل
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"تم تفعيل التذكير وتم إرسال ذكر إلى {sent_count} جهة"))
+        # **تم حذف أي رد لتجنب رسالة تأكيد**
         return
 
     # ---------------- حماية الروابط ---------------- #
