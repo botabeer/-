@@ -156,27 +156,34 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
 
-    # أمر ذكرني (يرسل للجميع)
+    # أمر ذكرني (إرسال مضمون لجميع المستخدمين والقروبات)
     if user_text.lower() == "ذكرني":
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
 
         sent_count = 0
 
-        # أرسل لكل مستخدم
-        for uid in target_users:
-            if uid not in notifications_off:
-                try:
-                    line_bot_api.push_message(uid, TextSendMessage(text=message))
-                    sent_count += 1
-                except:
-                    pass
+        # أرسل للمستخدم الحالي أولًا
+        try:
+            line_bot_api.push_message(user_id, TextSendMessage(text=message))
+            sent_count += 1
+        except:
+            pass
 
         # أرسل لكل مجموعة
         for gid in target_groups:
             if gid not in notifications_off:
                 try:
                     line_bot_api.push_message(gid, TextSendMessage(text=message))
+                    sent_count += 1
+                except:
+                    pass
+
+        # أرسل لبقية المستخدمين بدون تكرار
+        for uid in target_users:
+            if uid != user_id and uid not in notifications_off:
+                try:
+                    line_bot_api.push_message(uid, TextSendMessage(text=message))
                     sent_count += 1
                 except:
                     pass
