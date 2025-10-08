@@ -22,21 +22,22 @@ CONTENT_FILE = "content.json"
 def load_data():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({"users": [], "tasbih": {}, "notifications_off": []}, f, ensure_ascii=False, indent=2)
-        return set(), {}, set()
+            json.dump({"users": [], "groups": [], "tasbih": {}, "notifications_off": []}, f, ensure_ascii=False, indent=2)
+        return set(), set(), {}, set()
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-        return set(data.get("users", [])), data.get("tasbih", {}), set(data.get("notifications_off", []))
+        return set(data.get("users", [])), set(data.get("groups", [])), data.get("tasbih", {}), set(data.get("notifications_off", []))
 
 def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump({
             "users": list(target_users),
+            "groups": list(target_groups),
             "tasbih": tasbih_counts,
             "notifications_off": list(notifications_off)
         }, f, ensure_ascii=False, indent=2)
 
-target_users, tasbih_counts, notifications_off = load_data()
+target_users, target_groups, tasbih_counts, notifications_off = load_data()
 
 # ---------------- تحميل المحتوى ---------------- #
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
@@ -52,11 +53,17 @@ def send_random_message():
                 line_bot_api.push_message(uid, TextSendMessage(text=message))
             except:
                 pass
+    for gid in target_groups:
+        if gid not in notifications_off:
+            try:
+                line_bot_api.push_message(gid, TextSendMessage(text=message))
+            except:
+                pass
 
 def message_loop():
     while True:
         send_random_message()
-        time.sleep(random.randint(3600, 5400))  # كل ساعة إلى ساعة ونصف
+        time.sleep(random.randint(3600, 5400))
 
 threading.Thread(target=message_loop, daemon=True).start()
 
@@ -101,23 +108,49 @@ def handle_message(event):
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
-    # ---------------- تسجيل المستخدمين تلقائيًا ---------------- #
+    # ---------------- تسجيل المستخدمين والقروبات تلقائيًا ---------------- #
     first_time = False
+
+    # تسجيل المستخدم
     if user_id not in target_users:
         target_users.add(user_id)
         first_time = True
+
+    # تسجيل القروب إذا موجود
+    gid = None
+    if hasattr(event.source, 'group_id') and event.source.group_id:
+        gid = event.source.group_id
+        if gid not in target_groups:
+            target_groups.add(gid)
+            first_time = True
+
     save_data()
     ensure_user_counts(user_id)
 
-    # ---------------- إرسال رسالة عشوائية عند أول تواصل ---------------- #
+    # ---------------- إرسال ذكر فورًا عند أول رسالة ---------------- #
     if first_time:
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
+
+        sent_count = 0
+
+        # للمستخدم الحالي
         try:
             line_bot_api.push_message(user_id, TextSendMessage(text=message))
+            sent_count += 1
         except:
             pass
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم تفعيل التذكير"))
+
+        # للقروب الحالي إذا موجود
+        if gid:
+            try:
+                line_bot_api.push_message(gid, TextSendMessage(text=message))
+                sent_count += 1
+            except:
+                pass
+
+        # الرد للمستخدم ليؤكد التفعيل
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"تم تفعيل التذكير وتم إرسال ذكر إلى {sent_count} جهة"))
         return
 
     # ---------------- حماية الروابط ---------------- #
@@ -129,7 +162,7 @@ def handle_message(event):
         help_text = """أوامر البوت المتاحة:
 
 1. ذكرني
-   - يرسل دعاء أو حديث أو ذكر عشوائي لجميع المستخدمين.
+   - يرسل دعاء أو حديث أو ذكر عشوائي لجميع المستخدمين والقروب الحالي.
 
 2. تسبيح
    - عرض عدد التسبيحات لكل كلمة لكل مستخدم.
@@ -149,6 +182,8 @@ def handle_message(event):
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
 
         sent_count = 0
+
+        # للمستخدمين الخاصين فقط
         for uid in target_users:
             if uid not in notifications_off:
                 try:
@@ -157,7 +192,15 @@ def handle_message(event):
                 except:
                     pass
 
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"تم إرسال الذكر إلى {sent_count} مستخدم"))
+        # للقروبات المسجلة: سيتم إرسال الذكر فقط إذا أرسل القروب رسالة
+        if gid and gid not in notifications_off:
+            try:
+                line_bot_api.push_message(gid, TextSendMessage(text=message))
+                sent_count += 1
+            except:
+                pass
+
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"تم إرسال الذكر إلى {sent_count} جهة"))
         return
 
     # ---------------- عرض التسبيح ---------------- #
@@ -178,15 +221,17 @@ def handle_message(event):
 
     # ---------------- إيقاف التذكير ---------------- #
     if user_text.lower() == "إيقاف":
-        notifications_off.add(user_id)
+        target_id = gid if gid else user_id
+        notifications_off.add(target_id)
         save_data()
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف الإشعارات التلقائية"))
         return
 
     # ---------------- تشغيل التذكير ---------------- #
     if user_text.lower() == "تشغيل":
-        if user_id in notifications_off:
-            notifications_off.remove(user_id)
+        target_id = gid if gid else user_id
+        if target_id in notifications_off:
+            notifications_off.remove(target_id)
             save_data()
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إعادة تفعيل الإشعارات التلقائية"))
         return
