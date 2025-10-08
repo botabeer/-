@@ -47,7 +47,7 @@ with open(CONTENT_FILE, "r", encoding="utf-8") as f:
 def send_random_message():
     category = random.choice(["duas", "adhkar", "hadiths"])
     message = random.choice(content.get(category, ["لا يوجد محتوى"]))
-    all_ids = list(target_groups) + list(target_users)
+    all_ids = list(target_users)
     for tid in all_ids:
         if tid not in notifications_off:
             try:
@@ -126,13 +126,19 @@ def handle_message(event):
     if first_time:
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
-        all_ids = list(target_groups) + list(target_users)
+        all_ids = list(target_users)
         for tid in all_ids:
             if tid not in notifications_off:
                 try:
                     line_bot_api.push_message(tid, TextSendMessage(text=message))
                 except:
                     pass
+        # إرسال للـ current group فقط إذا موجود
+        if hasattr(event.source, 'group_id') and event.source.group_id:
+            try:
+                line_bot_api.push_message(event.source.group_id, TextSendMessage(text=message))
+            except:
+                pass
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم تفعيل التذكير"))
         return
 
@@ -166,27 +172,21 @@ def handle_message(event):
 
         sent_count = 0
 
-        # أرسل للمستخدم الحالي أولًا
-        try:
-            line_bot_api.push_message(user_id, TextSendMessage(text=message))
-            sent_count += 1
-        except:
-            pass
-
-        # أرسل لكل مجموعة
-        for gid in target_groups:
-            if gid not in notifications_off:
+        # أرسل لكل المستخدمين الخاصين
+        for uid in target_users:
+            if uid not in notifications_off:
                 try:
-                    line_bot_api.push_message(gid, TextSendMessage(text=message))
+                    line_bot_api.push_message(uid, TextSendMessage(text=message))
                     sent_count += 1
                 except:
                     pass
 
-        # أرسل لبقية المستخدمين بدون تكرار
-        for uid in target_users:
-            if uid != user_id and uid not in notifications_off:
+        # أرسل للـ current group فقط إذا موجود
+        if hasattr(event.source, 'group_id') and event.source.group_id:
+            gid = event.source.group_id
+            if gid not in notifications_off:
                 try:
-                    line_bot_api.push_message(uid, TextSendMessage(text=message))
+                    line_bot_api.push_message(gid, TextSendMessage(text=message))
                     sent_count += 1
                 except:
                     pass
@@ -215,7 +215,8 @@ def handle_message(event):
 
     # ---------------- إيقاف التذكير ---------------- #
     if user_text.lower() == "إيقاف":
-        notifications_off.add(user_id if not hasattr(event.source, 'group_id') else event.source.group_id)
+        target_id = user_id if not hasattr(event.source, 'group_id') else event.source.group_id
+        notifications_off.add(target_id)
         save_data()
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف الإشعارات التلقائية"))
         return
