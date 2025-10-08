@@ -2,7 +2,7 @@ from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import os, random, json
+import os, random, json, threading, time
 from dotenv import load_dotenv
 
 # ---------------- إعداد البوت ---------------- #
@@ -42,6 +42,25 @@ target_users, target_groups, tasbih_counts, notifications_off = load_data()
 # ---------------- تحميل المحتوى ---------------- #
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
     content = json.load(f)
+
+# ---------------- إرسال أذكار تلقائي ---------------- #
+def send_random_message():
+    category = random.choice(["duas", "adhkar", "hadiths"])
+    message = random.choice(content.get(category, ["لا يوجد محتوى"]))
+    all_ids = list(target_users) + list(target_groups)
+    for tid in all_ids:
+        if tid not in notifications_off:
+            try:
+                line_bot_api.push_message(tid, TextSendMessage(text=message))
+            except:
+                pass
+
+def message_loop():
+    while True:
+        send_random_message()
+        time.sleep(random.randint(3600, 5400))  # كل ساعة إلى ساعة ونصف عشوائي
+
+threading.Thread(target=message_loop, daemon=True).start()
 
 # ---------------- Webhook ---------------- #
 @app.route("/", methods=["GET"])
@@ -121,7 +140,7 @@ def handle_message(event):
             except:
                 pass
 
-        # **تم حذف أي رد لتجنب رسالة تأكيد**
+        # بدون أي رد للمستخدم
         return
 
     # ---------------- حماية الروابط ---------------- #
