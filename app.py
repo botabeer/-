@@ -103,23 +103,26 @@ def handle_message(event):
     user_text = event.message.text.strip()
     user_id = event.source.user_id
 
-    # تسجيل المستخدمين والقروبات لأول مرة
+    # ---------------- تسجيل المعرفات تلقائيًا ---------------- #
     first_time = False
-    if hasattr(event.source, 'group_id') and event.source.group_id:
-        target_id = event.source.group_id
-        if target_id not in target_groups:
-            first_time = True
-        target_groups.add(target_id)
-    else:
-        target_id = user_id
-        if target_id not in target_users:
-            first_time = True
-        target_users.add(target_id)
 
+    # تسجيل القروب إذا موجود
+    if hasattr(event.source, 'group_id') and event.source.group_id:
+        gid = event.source.group_id
+        if gid not in target_groups:
+            target_groups.add(gid)
+            first_time = True
+
+    # تسجيل المستخدم
+    if user_id not in target_users:
+        target_users.add(user_id)
+        first_time = True
+
+    # حفظ البيانات بعد التسجيل
     save_data()
     ensure_user_counts(user_id)
 
-    # إرسال رسالة عشوائية عند أول تواصل لجميع المسجلين
+    # ---------------- إرسال رسالة عشوائية عند أول تواصل ---------------- #
     if first_time:
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
@@ -133,11 +136,11 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم تفعيل التذكير"))
         return
 
-    # حماية الروابط
+    # ---------------- حماية الروابط ---------------- #
     if handle_links(event, user_id):
         return
 
-    # أوامر المساعدة
+    # ---------------- أوامر المساعدة ---------------- #
     if user_text.lower() == "مساعدة":
         help_text = """أوامر البوت المتاحة:
 
@@ -156,7 +159,7 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
 
-    # أمر ذكرني (إرسال مضمون لجميع المستخدمين والقروبات)
+    # ---------------- أمر ذكرني ---------------- #
     if user_text.lower() == "ذكرني":
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
@@ -194,14 +197,14 @@ def handle_message(event):
             pass
         return
 
-    # عرض التسبيح
+    # ---------------- عرض التسبيح ---------------- #
     if user_text.lower() == "تسبيح":
         counts = tasbih_counts[user_id]
         status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
 
-    # التسبيح (زيادة العد)
+    # ---------------- التسبيح (زيادة العد) ---------------- #
     if user_text in ("سبحان الله", "الحمد لله", "الله أكبر"):
         tasbih_counts[user_id][user_text] += 1
         save_data()
@@ -210,15 +213,16 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
 
-    # إيقاف التذكير
+    # ---------------- إيقاف التذكير ---------------- #
     if user_text.lower() == "إيقاف":
-        notifications_off.add(target_id)
+        notifications_off.add(user_id if not hasattr(event.source, 'group_id') else event.source.group_id)
         save_data()
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف الإشعارات التلقائية"))
         return
 
-    # تشغيل التذكير
+    # ---------------- تشغيل التذكير ---------------- #
     if user_text.lower() == "تشغيل":
+        target_id = user_id if not hasattr(event.source, 'group_id') else event.source.group_id
         if target_id in notifications_off:
             notifications_off.remove(target_id)
             save_data()
