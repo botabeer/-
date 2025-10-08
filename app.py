@@ -2,7 +2,7 @@ from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import os, random, json, threading, time
+import os, random, json
 from dotenv import load_dotenv
 
 # ---------------- إعداد البوت ---------------- #
@@ -42,30 +42,6 @@ target_users, target_groups, tasbih_counts, notifications_off = load_data()
 # ---------------- تحميل المحتوى ---------------- #
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
     content = json.load(f)
-
-# ---------------- إرسال رسائل عشوائية ---------------- #
-def send_random_message():
-    category = random.choice(["duas", "adhkar", "hadiths"])
-    message = random.choice(content.get(category, ["لا يوجد محتوى"]))
-    for uid in target_users:
-        if uid not in notifications_off:
-            try:
-                line_bot_api.push_message(uid, TextSendMessage(text=message))
-            except:
-                pass
-    for gid in target_groups:
-        if gid not in notifications_off:
-            try:
-                line_bot_api.push_message(gid, TextSendMessage(text=message))
-            except:
-                pass
-
-def message_loop():
-    while True:
-        send_random_message()
-        time.sleep(random.randint(3600, 5400))
-
-threading.Thread(target=message_loop, daemon=True).start()
 
 # ---------------- Webhook ---------------- #
 @app.route("/", methods=["GET"])
@@ -160,47 +136,12 @@ def handle_message(event):
     # ---------------- أوامر المساعدة ---------------- #
     if user_text.lower() == "مساعدة":
         help_text = """أوامر البوت المتاحة:
-
-1. ذكرني
-   - يرسل دعاء أو حديث أو ذكر عشوائي لجميع المستخدمين والقروب الحالي.
-
-2. تسبيح
+تسبيح
    - عرض عدد التسبيحات لكل كلمة لكل مستخدم.
 
-3. سبحان الله / الحمد لله / الله أكبر
-   - زيادة عدد التسبيحات لكل كلمة.
-
-4. الإشعارات
-   - إيقاف: يوقف الإشعارات التلقائية
-   - تشغيل: يعيد تفعيل الإشعارات التلقائية"""
+سبحان الله / الحمد لله / الله أكبر
+   - زيادة عدد التسبيحات لكل كلمة."""
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
-        return
-
-    # ---------------- أمر ذكرني ---------------- #
-    if user_text.lower() == "ذكرني":
-        category = random.choice(["duas", "adhkar", "hadiths"])
-        message = random.choice(content.get(category, ["لا يوجد محتوى"]))
-
-        sent_count = 0
-
-        # للمستخدمين الخاصين فقط
-        for uid in target_users:
-            if uid not in notifications_off:
-                try:
-                    line_bot_api.push_message(uid, TextSendMessage(text=message))
-                    sent_count += 1
-                except:
-                    pass
-
-        # للقروبات المسجلة: سيتم إرسال الذكر فقط إذا أرسل القروب رسالة
-        if gid and gid not in notifications_off:
-            try:
-                line_bot_api.push_message(gid, TextSendMessage(text=message))
-                sent_count += 1
-            except:
-                pass
-
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"تم إرسال الذكر إلى {sent_count} جهة"))
         return
 
     # ---------------- عرض التسبيح ---------------- #
