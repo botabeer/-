@@ -22,7 +22,7 @@ CONTENT_FILE = "content.json"
 def load_data():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({"users": [], "groups": [], "tasbih": {}}, f, ensure_ascii=False, indent=2)
+            json.dump({"users": [], "groups": [], "tasbih": {}, "notifications_off":[]}, f, ensure_ascii=False, indent=2)
         return set(), set(), {}
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -33,7 +33,8 @@ def save_data():
         json.dump({
             "users": list(target_users),
             "groups": list(target_groups),
-            "tasbih": tasbih_counts
+            "tasbih": tasbih_counts,
+            "notifications_off":[]
         }, f, ensure_ascii=False, indent=2)
 
 target_users, target_groups, tasbih_counts = load_data()
@@ -44,23 +45,11 @@ if os.path.exists(CONTENT_FILE):
     with open(CONTENT_FILE, "r", encoding="utf-8") as f:
         content = json.load(f)
 
-# ---------------- تحميل ملفات نصية ---------------- #
-text_files = ["quran.txt","karb.txt","nawm.txt","nom.txt","jummah.txt","salah.txt","salat_nabi.txt",
-              "istighfar.txt","tasbeeh.txt","mosque_in.txt","mosque_out.txt","home_in.txt","home_out.txt",
-              "sabah.txt","masa.txt","travel.txt"]
-
-text_data = {}
-for file in text_files:
-    if os.path.exists(file):
-        with open(file, "r", encoding="utf-8") as f:
-            lines = [line.strip() for line in f if line.strip()]
-            text_data[file] = lines
-
-# ---------------- إرسال ذكر/دعاء ---------------- #
+# ---------------- إرسال ذكر/دعاء/حديث ---------------- #
 def send_random_message_to_all():
     category = random.choice(["duas", "adhkar", "hadiths"])
     message = "لا يوجد محتوى"
-    if category in content:
+    if category in content and content[category]:
         message = random.choice(content[category])
     for uid in target_users:
         try:
@@ -119,31 +108,6 @@ def ensure_user_counts(uid):
     if uid not in tasbih_counts:
         tasbih_counts[uid] = {"سبحان الله":0, "الحمد لله":0, "الله أكبر":0, "استغفر الله":0}
 
-# ---------------- الرد على الكلمات المفتاحية ---------------- #
-def handle_keywords(user_text):
-    for key, msgs in content.get("keywords", {}).items():
-        if key in user_text:
-            return random.choice(msgs)
-    for file, lines in text_data.items():
-        if key_in_text(user_text, file):
-            return random.choice(lines)
-    return None
-
-def key_in_text(user_text, file_name):
-    # تحديد أي ملف مرتبط بكلمة معينة
-    mapping = {
-        "قرآن": "quran.txt",
-        "كرب": "karb.txt",
-        "نوم": ["nawm.txt","nom.txt"],
-        "سفر": "travel.txt"
-    }
-    keys = mapping.get(user_text, None)
-    if not keys:
-        return False
-    if isinstance(keys, list):
-        return file_name in keys
-    return file_name == keys
-
 # ---------------- معالجة الرسائل ---------------- #
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
@@ -163,9 +127,15 @@ def handle_message(event):
         save_data()
         ensure_user_counts(user_id)
 
-        # إرسال ذكر/دعاء عند التسجيل لأول مرة
+        # إرسال ذكر/دعاء/حديث عند التسجيل لأول مرة
         if first_time:
-            send_random_message_to_all()
+            try:
+                category = random.choice(["duas", "adhkar", "hadiths"])
+                if category in content and content[category]:
+                    message = random.choice(content[category])
+                    line_bot_api.push_message(user_id, TextSendMessage(text=message))
+            except:
+                pass
             return
 
         # حماية الروابط
@@ -209,14 +179,6 @@ def handle_message(event):
         if user_text.lower() == "ذكرني":
             send_random_message_to_all()
             return
-
-        # الرد على الكلمات المفتاحية
-        reply_msg = handle_keywords(user_text)
-        if reply_msg:
-            try:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_msg))
-            except:
-                pass
 
     except:
         pass
