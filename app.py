@@ -82,8 +82,8 @@ def send_random_message():
         if tid not in notifications_off:
             try:
                 line_bot_api.push_message(tid, TextSendMessage(text=message))
-            except:
-                pass
+            except Exception as e:
+                print(f"خطأ في إرسال رسالة إلى {tid}: {e}")
 
 def message_loop():
     while True:
@@ -126,37 +126,24 @@ def handle_message(event):
     gid = getattr(event.source, 'group_id', None)
 
     first_time = False
+
+    # تسجيل المستخدم والقروب عند أول تفاعل أو عند "مساعدة"
     if user_id not in target_users:
         target_users.add(user_id)
         first_time = True
     if gid and gid not in target_groups:
         target_groups.add(gid)
         first_time = True
+
     save_data()
     ensure_user_counts(user_id)
 
-    # إرسال ذكر أو دعاء عند أول تفاعل
-    if first_time:
-        category = random.choice(["duas", "adhkar", "hadiths"])
-        message = random.choice(content.get(category, ["لا يوجد محتوى"]))
-        if random.random() < 0.5:
-            message += "\nاستغفر الله"
-        try:
-            line_bot_api.push_message(user_id, TextSendMessage(text=message))
-        except:
-            pass
-        if gid:
-            try:
-                line_bot_api.push_message(gid, TextSendMessage(text=message))
-            except:
-                pass
-        return
-
+    # حماية الروابط
     if handle_links(event, user_id):
         return
 
-    # أمر المساعدة
-    if user_text.lower() == "مساعدة":
+    # أمر المساعدة أو أول رسالة
+    if first_time or user_text.lower() == "مساعدة":
         try:
             with open(HELP_FILE, "r", encoding="utf-8") as f:
                 help_text = f.read()
@@ -165,18 +152,27 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
 
-    # أمر ذكرني: إرسال أذكار ودعاء فورًا لكل المستخدمين والقروبات
+    # أمر ذكرني: تسجيل المستخدم والقروب وإرسال ذكر للجميع
     if user_text.lower() == "ذكرني":
+        if user_id not in target_users:
+            target_users.add(user_id)
+        if gid and gid not in target_groups:
+            target_groups.add(gid)
+        save_data()
+        ensure_user_counts(user_id)
+
         message = random.choice(content.get("duas", ["لا يوجد محتوى"]))
         if random.random() < 0.5:
             message += "\nاستغفر الله"
+
         all_ids = list(target_users) + list(target_groups)
         for tid in all_ids:
             if tid not in notifications_off:
                 try:
                     line_bot_api.push_message(tid, TextSendMessage(text=message))
-                except:
-                    pass
+                except Exception as e:
+                    print(f"خطأ في إرسال رسالة إلى {tid}: {e}")
+
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إرسال الذكر لجميع المستخدمين"))
         return
 
