@@ -47,6 +47,16 @@ with open(CONTENT_FILE, "r", encoding="utf-8") as f:
 
 # ---------------- تسبيح ---------------- #
 tasbih_limits = 33
+tasbih_map = {
+    "سبحان الله": "سبحان الله",
+    "سبحانالله": "سبحان الله",
+    "الحمد لله": "الحمد لله",
+    "الحمدلله": "الحمد لله",
+    "الله أكبر": "الله أكبر",
+    "اللهاكبر": "الله أكبر",
+    "استغفر الله": "استغفر الله",
+    "استغفرالله": "استغفر الله"
+}
 tasbih_words = ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]
 
 def ensure_user_counts(uid):
@@ -82,8 +92,8 @@ def send_random_message():
         if tid not in notifications_off:
             try:
                 line_bot_api.push_message(tid, TextSendMessage(text=message))
-            except Exception as e:
-                print(f"خطأ في إرسال رسالة إلى {tid}: {e}")
+            except:
+                pass  # تجاهل أي خطأ
 
 def message_loop():
     while True:
@@ -99,7 +109,10 @@ def handle_links(event, user_id):
     if "http://" in text or "https://" in text or "www." in text:
         links_count[user_id] = links_count.get(user_id, 0) + 1
         if links_count[user_id] >= 2:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
+            try:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
+            except:
+                pass
         return True
     return False
 
@@ -115,7 +128,7 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        print("خطأ في التوقيع")
+        pass  # تجاهل أي خطأ
     return "OK", 200
 
 # ---------------- معالجة الرسائل ---------------- #
@@ -127,7 +140,7 @@ def handle_message(event):
 
     first_time = False
 
-    # تسجيل المستخدم والقروب عند أول تفاعل أو عند "مساعدة"
+    # تسجيل المستخدم والقروب عند أول رسالة مهما كانت
     if user_id not in target_users:
         target_users.add(user_id)
         first_time = True
@@ -142,17 +155,35 @@ def handle_message(event):
     if handle_links(event, user_id):
         return
 
-    # أمر المساعدة أو أول رسالة
-    if first_time or user_text.lower() == "مساعدة":
+    # إذا كانت أول رسالة، أرسل ذكر أو دعاء تلقائي
+    if first_time:
+        message = random.choice(content.get("duas", ["لا يوجد محتوى"]))
+        if random.random() < 0.5:
+            message += "\nاستغفر الله"
+        try:
+            line_bot_api.push_message(user_id, TextSendMessage(text=message))
+        except:
+            pass
+        if gid:
+            try:
+                line_bot_api.push_message(gid, TextSendMessage(text=message))
+            except:
+                pass
+
+    # أمر المساعدة
+    if user_text.lower() == "مساعدة":
         try:
             with open(HELP_FILE, "r", encoding="utf-8") as f:
                 help_text = f.read()
         except:
             help_text = "لا يوجد محتوى مساعدة حالياً."
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
+        try:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
+        except:
+            pass
         return
 
-    # أمر ذكرني: تسجيل المستخدم والقروب وإرسال ذكر للجميع
+    # أمر ذكرني
     if user_text.lower() == "ذكرني":
         if user_id not in target_users:
             target_users.add(user_id)
@@ -170,27 +201,32 @@ def handle_message(event):
             if tid not in notifications_off:
                 try:
                     line_bot_api.push_message(tid, TextSendMessage(text=message))
-                except Exception as e:
-                    print(f"خطأ في إرسال رسالة إلى {tid}: {e}")
-
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إرسال الذكر لجميع المستخدمين"))
+                except:
+                    pass
         return
 
     # عرض التسبيح
     if user_text.lower() == "تسبيح":
         counts = tasbih_counts[user_id]
         status = "\n".join([f"{word}: {counts[word]}/{tasbih_limits}" for word in tasbih_words])
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
+        try:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
+        except:
+            pass
         return
 
     # زيادة التسبيح
-    if user_text in tasbih_words:
-        if tasbih_counts[user_id][user_text] < tasbih_limits:
-            tasbih_counts[user_id][user_text] += 1
+    key = tasbih_map.get(user_text)
+    if key:
+        if tasbih_counts[user_id][key] < tasbih_limits:
+            tasbih_counts[user_id][key] += 1
             save_data()
         counts = tasbih_counts[user_id]
         status = "\n".join([f"{word}: {counts[word]}/{tasbih_limits}" for word in tasbih_words])
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
+        try:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
+        except:
+            pass
         return
 
     # إيقاف الإشعارات
@@ -198,7 +234,6 @@ def handle_message(event):
         target_id = gid if gid else user_id
         notifications_off.add(target_id)
         save_data()
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف الإشعارات التلقائية"))
         return
 
     # إعادة تشغيل الإشعارات
@@ -207,7 +242,6 @@ def handle_message(event):
         if target_id in notifications_off:
             notifications_off.remove(target_id)
             save_data()
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إعادة تفعيل الإشعارات التلقائية"))
         return
 
 # ---------------- تشغيل التطبيق ---------------- #
