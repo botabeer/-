@@ -3,7 +3,6 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import os, random, json, threading, time
-from datetime import datetime
 from dotenv import load_dotenv
 
 # ---------------- إعداد البوت ---------------- #
@@ -40,32 +39,29 @@ def save_data():
 target_users, target_groups, tasbih_counts = load_data()
 
 # ---------------- تحميل المحتوى ---------------- #
-with open(CONTENT_FILE, "r", encoding="utf-8") as f:
-    content = json.load(f)
+content = {}
+if os.path.exists(CONTENT_FILE):
+    with open(CONTENT_FILE, "r", encoding="utf-8") as f:
+        content = json.load(f)
 
-# ---------------- كلمات مفتاحية ---------------- #
-keywords = {
-    "حزن": ["اللهم فرج همي وكربتي", "قال رسول الله ﷺ: من لا يشكر الناس لا يشكر الله"],
-    "قلق": ["توكل على الله فهو حسبك", "قال رسول الله ﷺ: الصبر ضياء"],
-    "نوم": ["اللهم قني عذابك وأرح قلبي", "اذكر قبل النوم: سبحان الله، الحمد لله، الله أكبر"]
-}
+# ---------------- تحميل ملفات نصية ---------------- #
+text_files = ["quran.txt","karb.txt","nawm.txt","nom.txt","jummah.txt","salah.txt","salat_nabi.txt",
+              "istighfar.txt","tasbeeh.txt","mosque_in.txt","mosque_out.txt","home_in.txt","home_out.txt",
+              "sabah.txt","masa.txt","travel.txt"]
 
-# ---------------- أذكار حسب الوقت ---------------- #
-def time_based_adhkar():
-    now = datetime.now().hour
-    if 5 <= now < 12:
-        return random.choice(content.get("sabah", ["لا يوجد أذكار صباحية"]))
-    elif 12 <= now < 17:
-        return random.choice(content.get("masa", ["لا يوجد أذكار مسائية"]))
-    elif 17 <= now < 21:
-        return random.choice(content.get("salah", ["لا يوجد أذكار صلاة"]))
-    else:
-        return random.choice(content.get("nawm", ["لا يوجد أذكار للنوم"]))
+text_data = {}
+for file in text_files:
+    if os.path.exists(file):
+        with open(file, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
+            text_data[file] = lines
 
 # ---------------- إرسال ذكر/دعاء ---------------- #
 def send_random_message_to_all():
-    # أذكار حسب الوقت أولا
-    message = time_based_adhkar()
+    category = random.choice(["duas", "adhkar", "hadiths"])
+    message = "لا يوجد محتوى"
+    if category in content:
+        message = random.choice(content[category])
     for uid in target_users:
         try:
             line_bot_api.push_message(uid, TextSendMessage(text=message))
@@ -81,7 +77,7 @@ def send_random_message_to_all():
 def scheduled_messages():
     while True:
         send_random_message_to_all()
-        time.sleep(5 * 60 * 60)  # خمس مرات يومياً تقريباً
+        time.sleep(5*60*60)  # خمس مرات يومياً تقريباً
 
 threading.Thread(target=scheduled_messages, daemon=True).start()
 
@@ -123,6 +119,31 @@ def ensure_user_counts(uid):
     if uid not in tasbih_counts:
         tasbih_counts[uid] = {"سبحان الله":0, "الحمد لله":0, "الله أكبر":0, "استغفر الله":0}
 
+# ---------------- الرد على الكلمات المفتاحية ---------------- #
+def handle_keywords(user_text):
+    for key, msgs in content.get("keywords", {}).items():
+        if key in user_text:
+            return random.choice(msgs)
+    for file, lines in text_data.items():
+        if key_in_text(user_text, file):
+            return random.choice(lines)
+    return None
+
+def key_in_text(user_text, file_name):
+    # تحديد أي ملف مرتبط بكلمة معينة
+    mapping = {
+        "قرآن": "quran.txt",
+        "كرب": "karb.txt",
+        "نوم": ["nawm.txt","nom.txt"],
+        "سفر": "travel.txt"
+    }
+    keys = mapping.get(user_text, None)
+    if not keys:
+        return False
+    if isinstance(keys, list):
+        return file_name in keys
+    return file_name == keys
+
 # ---------------- معالجة الرسائل ---------------- #
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
@@ -149,43 +170,6 @@ def handle_message(event):
 
         # حماية الروابط
         if handle_links(event, user_id):
-            return
-
-        # ---------------- كلمات مفتاحية ---------------- #
-        for key, responses in keywords.items():
-            if key in user_text:
-                try:
-                    line_bot_api.reply_message(
-                        event.reply_token,
-                        TextSendMessage(text=random.choice(responses))
-                    )
-                except:
-                    pass
-                return
-
-        # أوامر ذكية بالعربي
-        if user_text.lower() == "قرآن":
-            try:
-                message = random.choice(content.get("quran", ["لا يوجد قرآن"]))
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
-            except:
-                pass
-            return
-
-        if user_text.lower() in ("أذكار", "اذكار"):
-            try:
-                message = random.choice(content.get("adhkar", ["لا يوجد أذكار"]))
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
-            except:
-                pass
-            return
-
-        if user_text.lower() in ("حديث", "احاديث"):
-            try:
-                message = random.choice(content.get("hadiths", ["لا يوجد أحاديث"]))
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
-            except:
-                pass
             return
 
         # أوامر المساعدة
@@ -225,6 +209,14 @@ def handle_message(event):
         if user_text.lower() == "ذكرني":
             send_random_message_to_all()
             return
+
+        # الرد على الكلمات المفتاحية
+        reply_msg = handle_keywords(user_text)
+        if reply_msg:
+            try:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_msg))
+            except:
+                pass
 
     except:
         pass
