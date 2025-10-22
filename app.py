@@ -134,6 +134,7 @@ def handle_message(event):
 
         # ---------------- أوامر المساعدة ---------------- #
         if user_text.lower() == "مساعدة":
+            # تسجيل تلقائي عند طلب المساعدة
             save_data()
             try:
                 with open("help.txt", "r", encoding="utf-8") as f:
@@ -161,26 +162,29 @@ def handle_message(event):
             "اللهأكبر": "الله أكبر",
             "استغفرالله": "استغفر الله"
         }
-        key = key_map.get(clean_text)
-        if key:
+        if clean_text in key_map:
+            key = key_map[clean_text]
             if tasbih_counts[user_id][key] < tasbih_limits:
                 tasbih_counts[user_id][key] += 1
                 save_data()
 
-            counts = tasbih_counts[user_id]
-            status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33\nاستغفر الله: {counts['استغفر الله']}/33"
-            try:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-            except:
-                pass
-
-            if counts[key] == tasbih_limits:
+            # إشعار اكتمال ذكر فردي
+            if tasbih_counts[user_id][key] == tasbih_limits:
                 try:
                     line_bot_api.push_message(user_id, TextSendMessage(text=f"تم اكتمال {key} 33 مرة!"))
                 except:
                     pass
 
-            if all(counts[k] >= tasbih_limits for k in ["سبحان الله","الحمد لله","الله أكبر","استغفر الله"]):
+            counts = tasbih_counts[user_id]
+            status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33\nاستغفر الله: {counts['استغفر الله']}/33"
+            
+            try:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
+            except:
+                pass
+
+            # إشعار اكتمال الأربع أذكار
+            if all(counts[k] >= tasbih_limits for k in ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]):
                 try:
                     line_bot_api.push_message(
                         user_id,
@@ -192,20 +196,16 @@ def handle_message(event):
 
         # ---------------- أمر ذكرني ---------------- #
         if user_text.lower() == "ذكرني":
-            category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-            message = random.choice(content.get(category, ["لا يوجد محتوى"]))
-
-            for uid in target_users:
-                try:
-                    line_bot_api.push_message(uid, TextSendMessage(text=message))
-                except:
-                    pass
-
-            for gid in target_groups:
-                try:
-                    line_bot_api.push_message(gid, TextSendMessage(text=message))
-                except:
-                    pass
+            # إرسال لجميع المستخدمين والمجموعات
+            send_random_message_to_all()
+            try:
+                message = random.choice(
+                    content.get(random.choice(["duas", "adhkar", "hadiths", "quran"]), ["لا يوجد محتوى"])
+                )
+                # يمكن الرد للمستخدم مباشرة
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إرسال الذكر للجميع"))
+            except:
+                pass
             return
 
         # ---------------- إيقاف/تشغيل التذكير ---------------- #
@@ -223,7 +223,7 @@ def handle_message(event):
             return
 
     except:
-        pass
+        pass  # تجاهل أي أخطاء دون إرسال رسائل
 
 # ---------------- تشغيل التطبيق ---------------- #
 if __name__ == "__main__":
