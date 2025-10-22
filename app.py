@@ -19,7 +19,7 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 # ---------------- ملفات البيانات ---------------- #
 DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
-HELP_FILE = "help.txt"  # ملف المساعدة الخارجي
+HELP_FILE = "help.txt"
 
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -66,16 +66,16 @@ def reset_tasbih_daily():
                     tasbih_counts[uid][word] = 0
             save_data()
             last_reset_date = now.date()
-        time.sleep(60)  # تحقق كل دقيقة
+        time.sleep(60)
 
 threading.Thread(target=reset_tasbih_daily, daemon=True).start()
 
-# ---------------- إرسال أذكار وتسبيح تلقائي ---------------- #
+# ---------------- إرسال أذكار ودعاء تلقائي ---------------- #
 def send_random_message():
     category = random.choice(["duas", "adhkar", "hadiths"])
     message = random.choice(content.get(category, ["لا يوجد محتوى"]))
     if random.random() < 0.5:
-        message += "\n" + "استغفر الله"
+        message += "\nاستغفر الله"
 
     all_ids = list(target_users) + list(target_groups)
     for tid in all_ids:
@@ -88,7 +88,7 @@ def send_random_message():
 def message_loop():
     while True:
         send_random_message()
-        time.sleep(random.randint(3600, 5400))
+        time.sleep(random.randint(3600, 5400))  # كل ساعة إلى ساعة ونصف
 
 threading.Thread(target=message_loop, daemon=True).start()
 
@@ -97,10 +97,7 @@ links_count = {}
 def handle_links(event, user_id):
     text = event.message.text.strip()
     if "http://" in text or "https://" in text or "www." in text:
-        if user_id not in links_count:
-            links_count[user_id] = 1
-        else:
-            links_count[user_id] += 1
+        links_count[user_id] = links_count.get(user_id, 0) + 1
         if links_count[user_id] >= 2:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
         return True
@@ -138,11 +135,12 @@ def handle_message(event):
     save_data()
     ensure_user_counts(user_id)
 
+    # إرسال ذكر أو دعاء عند أول تفاعل
     if first_time:
         category = random.choice(["duas", "adhkar", "hadiths"])
         message = random.choice(content.get(category, ["لا يوجد محتوى"]))
         if random.random() < 0.5:
-            message += "\n" + "استغفر الله"
+            message += "\nاستغفر الله"
         try:
             line_bot_api.push_message(user_id, TextSendMessage(text=message))
         except:
@@ -157,7 +155,7 @@ def handle_message(event):
     if handle_links(event, user_id):
         return
 
-    # ---------------- قراءة المساعدة من ملف خارجي ---------------- #
+    # أمر المساعدة
     if user_text.lower() == "مساعدة":
         try:
             with open(HELP_FILE, "r", encoding="utf-8") as f:
@@ -167,12 +165,29 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         return
 
+    # أمر ذكرني: إرسال أذكار ودعاء فورًا لكل المستخدمين والقروبات
+    if user_text.lower() == "ذكرني":
+        message = random.choice(content.get("duas", ["لا يوجد محتوى"]))
+        if random.random() < 0.5:
+            message += "\nاستغفر الله"
+        all_ids = list(target_users) + list(target_groups)
+        for tid in all_ids:
+            if tid not in notifications_off:
+                try:
+                    line_bot_api.push_message(tid, TextSendMessage(text=message))
+                except:
+                    pass
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إرسال الذكر لجميع المستخدمين"))
+        return
+
+    # عرض التسبيح
     if user_text.lower() == "تسبيح":
         counts = tasbih_counts[user_id]
         status = "\n".join([f"{word}: {counts[word]}/{tasbih_limits}" for word in tasbih_words])
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
 
+    # زيادة التسبيح
     if user_text in tasbih_words:
         if tasbih_counts[user_id][user_text] < tasbih_limits:
             tasbih_counts[user_id][user_text] += 1
@@ -182,6 +197,7 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
         return
 
+    # إيقاف الإشعارات
     if user_text.lower() == "إيقاف":
         target_id = gid if gid else user_id
         notifications_off.add(target_id)
@@ -189,6 +205,7 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إيقاف الإشعارات التلقائية"))
         return
 
+    # إعادة تشغيل الإشعارات
     if user_text.lower() == "تشغيل":
         target_id = gid if gid else user_id
         if target_id in notifications_off:
