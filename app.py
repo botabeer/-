@@ -43,24 +43,20 @@ target_users, target_groups, tasbih_counts, notifications_off = load_data()
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
     content = json.load(f)
 
-# ---------------- تخزين آخر رسالة لكل مستخدم/مجموعة ---------------- #
-last_message_sent = {}
-
 # ---------------- إرسال ذكر/دعاء تلقائي ---------------- #
 def send_random_message_to_all():
-    for target_set in (target_users, target_groups):
-        for target in target_set:
-            if target in notifications_off:
-                continue
-            try:
-                category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-                options = content.get(category, ["لا يوجد محتوى"])
-                last_msg = last_message_sent.get(target, "")
-                message = random.choice([m for m in options if m != last_msg] or options)
-                line_bot_api.push_message(target, TextSendMessage(text=message))
-                last_message_sent[target] = message
-            except:
-                pass
+    category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+    message = random.choice(content.get(category, ["لا يوجد محتوى"]))
+    for uid in target_users:
+        try:
+            line_bot_api.push_message(uid, TextSendMessage(text=message))
+        except:
+            pass
+    for gid in target_groups:
+        try:
+            line_bot_api.push_message(gid, TextSendMessage(text=message))
+        except:
+            pass
 
 def scheduled_messages():
     while True:
@@ -92,7 +88,10 @@ def handle_links(event, user_id):
         if "http://" in text or "https://" in text or "www." in text:
             links_count[user_id] = links_count.get(user_id, 0) + 1
             if links_count[user_id] >= 2:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
+                try:
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
+                except:
+                    pass
             return True
     except:
         pass
@@ -113,30 +112,28 @@ def handle_message(event):
         gid = getattr(event.source, 'group_id', None)
         first_time = False
 
-        # تسجيل المستخدمين والقروبات تلقائيًا
+        # ---------------- تسجيل المستخدمين والقروبات تلقائي ---------------- #
         if user_id not in target_users:
             target_users.add(user_id)
             first_time = True
+
         if gid and gid not in target_groups:
             target_groups.add(gid)
             first_time = True
+
         save_data()
         ensure_user_counts(user_id)
 
-        # إرسال ذكر/دعاء عند أول رسالة
+        # ---------------- إرسال ذكر/دعاء عند أول رسالة ---------------- #
         if first_time:
             send_random_message_to_all()
 
-        # حماية الروابط
+        # ---------------- حماية الروابط ---------------- #
         if handle_links(event, user_id):
             return
 
-        # أمر المساعدة
+        # ---------------- أوامر المساعدة ---------------- #
         if user_text.lower() == "مساعدة":
-            if user_id not in target_users:
-                target_users.add(user_id)
-            if gid and gid not in target_groups:
-                target_groups.add(gid)
             save_data()
             try:
                 with open("help.txt", "r", encoding="utf-8") as f:
@@ -146,51 +143,72 @@ def handle_message(event):
                 pass
             return
 
-        # عرض التسبيح
+        # ---------------- عرض التسبيح ---------------- #
         if user_text.lower() == "تسبيح":
             counts = tasbih_counts[user_id]
             status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33\nاستغفر الله: {counts['استغفر الله']}/33"
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
+            try:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
+            except:
+                pass
             return
 
-        # التسبيح (زيادة العد)
+        # ---------------- التسبيح (زيادة العد لكل الأذكار) ---------------- #
         clean_text = user_text.replace(" ", "")
-        if clean_text in ("سبحانالله", "الحمدلله", "اللهأكبر", "استغفرالله"):
-            key_map = {
-                "سبحانالله": "سبحان الله",
-                "الحمدلله": "الحمد لله",
-                "اللهأكبر": "الله أكبر",
-                "استغفرالله": "استغفر الله"
-            }
-            key = key_map[clean_text]
-
+        key_map = {
+            "سبحانالله": "سبحان الله",
+            "الحمدلله": "الحمد لله",
+            "اللهأكبر": "الله أكبر",
+            "استغفرالله": "استغفر الله"
+        }
+        key = key_map.get(clean_text)
+        if key:
             if tasbih_counts[user_id][key] < tasbih_limits:
                 tasbih_counts[user_id][key] += 1
                 save_data()
-                if tasbih_counts[user_id][key] == tasbih_limits:
-                    line_bot_api.push_message(user_id, TextSendMessage(text=f"تم اكتمال {key} 33 مرة!"))
 
             counts = tasbih_counts[user_id]
             status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33\nاستغفر الله: {counts['استغفر الله']}/33"
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
+            try:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
+            except:
+                pass
 
-            # عند اكتمال الأربع أذكار
-            if all(counts[k] >= tasbih_limits for k in ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]):
-                line_bot_api.push_message(user_id, TextSendMessage(text="جزاك الله خير\nوجعل الله لك ولوالديك الجنة"))
+            if counts[key] == tasbih_limits:
+                try:
+                    line_bot_api.push_message(user_id, TextSendMessage(text=f"تم اكتمال {key} 33 مرة!"))
+                except:
+                    pass
+
+            if all(counts[k] >= tasbih_limits for k in ["سبحان الله","الحمد لله","الله أكبر","استغفر الله"]):
+                try:
+                    line_bot_api.push_message(
+                        user_id,
+                        TextSendMessage(text="جزاك الله خير\nوجعل الله لك ولو والديك الجنة")
+                    )
+                except:
+                    pass
             return
 
-        # أمر ذكرني (يرسل لك أولًا ثم للجميع)
+        # ---------------- أمر ذكرني ---------------- #
         if user_text.lower() == "ذكرني":
             category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-            options = content.get(category, ["لا يوجد محتوى"])
-            last_msg = last_message_sent.get(user_id, "")
-            message = random.choice([m for m in options if m != last_msg] or options)
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
-            last_message_sent[user_id] = message
-            send_random_message_to_all()
+            message = random.choice(content.get(category, ["لا يوجد محتوى"]))
+
+            for uid in target_users:
+                try:
+                    line_bot_api.push_message(uid, TextSendMessage(text=message))
+                except:
+                    pass
+
+            for gid in target_groups:
+                try:
+                    line_bot_api.push_message(gid, TextSendMessage(text=message))
+                except:
+                    pass
             return
 
-        # إيقاف وتشغيل التذكير
+        # ---------------- إيقاف/تشغيل التذكير ---------------- #
         if user_text.lower() == "إيقاف":
             target_id = gid if gid else user_id
             notifications_off.add(target_id)
@@ -204,8 +222,8 @@ def handle_message(event):
                 save_data()
             return
 
-    except Exception as e:
-        print("Error:", e)
+    except:
+        pass
 
 # ---------------- تشغيل التطبيق ---------------- #
 if __name__ == "__main__":
