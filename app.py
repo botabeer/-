@@ -2,9 +2,10 @@ from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import os, random, json, threading, time
+import os, random, json, time
 from dotenv import load_dotenv
 from datetime import datetime
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # ---------------- إعداد البوت ---------------- #
 load_dotenv()
@@ -68,39 +69,32 @@ last_reset_date = datetime.now().date()
 
 def reset_tasbih_daily():
     global last_reset_date
-    while True:
-        now = datetime.now()
-        if now.date() != last_reset_date:
-            for uid in tasbih_counts:
-                for word in tasbih_words:
-                    tasbih_counts[uid][word] = 0
-            save_data()
-            last_reset_date = now.date()
-        time.sleep(60)
-
-threading.Thread(target=reset_tasbih_daily, daemon=True).start()
+    now = datetime.now()
+    if now.date() != last_reset_date:
+        for uid in tasbih_counts:
+            for word in tasbih_words:
+                tasbih_counts[uid][word] = 0
+        save_data()
+        last_reset_date = now.date()
 
 # ---------------- إرسال أذكار ودعاء تلقائي ---------------- #
 def send_random_message():
-    category = random.choice(["duas", "adhkar", "hadiths"])
-    message = random.choice(content.get(category, ["لا يوجد محتوى"]))
+    all_ids = list(target_users) + list(target_groups)
+    message = random.choice(content.get("duas", ["لا يوجد محتوى"]))
     if random.random() < 0.5:
         message += "\nاستغفر الله"
-
-    all_ids = list(target_users) + list(target_groups)
     for tid in all_ids:
         if tid not in notifications_off:
             try:
                 line_bot_api.push_message(tid, TextSendMessage(text=message))
             except:
-                pass  # تجاهل أي خطأ
+                pass
 
-def message_loop():
-    while True:
-        send_random_message()
-        time.sleep(random.randint(3600, 5400))  # كل ساعة إلى ساعة ونصف
-
-threading.Thread(target=message_loop, daemon=True).start()
+# ---------------- جدولة APScheduler ---------------- #
+scheduler = BackgroundScheduler()
+scheduler.add_job(reset_tasbih_daily, 'interval', minutes=1)  # تفقد يومياً كل دقيقة لإعادة الضبط
+scheduler.add_job(send_random_message, 'interval', seconds=random.randint(3600, 5400))  # التذكير التلقائي
+scheduler.start()
 
 # ---------------- حماية الروابط ---------------- #
 links_count = {}
@@ -155,7 +149,7 @@ def handle_message(event):
     if handle_links(event, user_id):
         return
 
-    # إذا كانت أول رسالة، أرسل ذكر أو دعاء تلقائي
+    # إرسال ذكر أو دعاء تلقائي بعد التسجيل
     if first_time:
         message = random.choice(content.get("duas", ["لا يوجد محتوى"]))
         if random.random() < 0.5:
@@ -185,18 +179,10 @@ def handle_message(event):
 
     # أمر ذكرني
     if user_text.lower() == "ذكرني":
-        if user_id not in target_users:
-            target_users.add(user_id)
-        if gid and gid not in target_groups:
-            target_groups.add(gid)
-        save_data()
-        ensure_user_counts(user_id)
-
+        all_ids = list(target_users) + list(target_groups)
         message = random.choice(content.get("duas", ["لا يوجد محتوى"]))
         if random.random() < 0.5:
             message += "\nاستغفر الله"
-
-        all_ids = list(target_users) + list(target_groups)
         for tid in all_ids:
             if tid not in notifications_off:
                 try:
