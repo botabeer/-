@@ -2,11 +2,12 @@ from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import os, random, json, threading, time
+import os, random, json, time, logging
 from datetime import datetime, timedelta
 import pytz
-from praytimes import PrayTimes  # pip install praytimes
+from praytimes import PrayTimes
 from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # ---------------- إعداد البوت ---------------- #
 load_dotenv()
@@ -17,6 +18,8 @@ PORT = int(os.getenv("PORT", 5000))
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
+logging.basicConfig(level=logging.INFO)
 
 # ---------------- ملفات البيانات ---------------- #
 DATA_FILE = "data.json"
@@ -63,68 +66,67 @@ sleep_adhkar = [
     "اللهم قني عذابك يوم تبعث عبادك"
 ]
 
+# ---------------- دوال إرسال الرسائل ---------------- #
+def push_message_all(text):
+    for uid in target_users:
+        try:
+            line_bot_api.push_message(uid, TextSendMessage(text=text))
+        except Exception as e:
+            logging.error(f"Error sending to user {uid}: {e}")
+    for gid in target_groups:
+        try:
+            line_bot_api.push_message(gid, TextSendMessage(text=text))
+        except Exception as e:
+            logging.error(f"Error sending to group {gid}: {e}")
+
 def send_adhkar_list_to_all(adhkar_list):
-    for message in adhkar_list:
-        for uid in target_users:
-            try:
-                line_bot_api.push_message(uid, TextSendMessage(text=message))
-            except:
-                pass
-        for gid in target_groups:
-            try:
-                line_bot_api.push_message(gid, TextSendMessage(text=message))
-            except:
-                pass
+    for msg in adhkar_list:
+        push_message_all(msg)
 
-# ---------------- التذكير حسب أوقات الصلاة + الأذكار ---------------- #
-def schedule_prayer_adhkar():
-    tz = pytz.timezone('Asia/Riyadh')
-    pt = PrayTimes('ISNA')
-    latitude, longitude = 24.7136, 46.6753  # موقع الرياض
-
-    while True:
-        now = datetime.now(tz)
-        times = pt.getTimes(now, (latitude, longitude), +3)
-        prayer_times = {prayer: datetime.strptime(times[prayer], '%H:%M').replace(
-            year=now.year, month=now.month, day=now.day, tzinfo=tz) for prayer in ['Fajr','Dhuhr','Asr','Maghrib','Isha']}
-
-        # قبل كل صلاة بـ 10 دقائق
-        for prayer, p_time in prayer_times.items():
-            notify_time = p_time - timedelta(minutes=10)
-            wait_seconds = (notify_time - datetime.now(tz)).total_seconds()
-            if wait_seconds > 0:
-                time.sleep(wait_seconds)
-                # إرسال الأذكار حسب الصلاة
-                if prayer == 'Fajr':
-                    send_adhkar_list_to_all(morning_adhkar)
-                elif prayer == 'Maghrib':
-                    send_adhkar_list_to_all(evening_adhkar)
-                elif prayer == 'Isha':
-                    send_adhkar_list_to_all(sleep_adhkar)
-
-        # الانتظار لبداية اليوم التالي
-        tomorrow = now + timedelta(days=1)
-        next_day = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 0, tzinfo=tz)
-        time.sleep((next_day - datetime.now(tz)).total_seconds())
-
-threading.Thread(target=schedule_prayer_adhkar, daemon=True).start()
-
-# ---------------- إرسال ذكر/دعاء/حديث عشوائي ---------------- #
 def send_random_message_to_all():
     category = random.choice(["duas", "adhkar", "hadiths"])
     message = "لا يوجد محتوى"
     if category in content and content[category]:
         message = random.choice(content[category])
-    for uid in target_users:
-        try:
-            line_bot_api.push_message(uid, TextSendMessage(text=message))
-        except:
-            pass
-    for gid in target_groups:
-        try:
-            line_bot_api.push_message(gid, TextSendMessage(text=message))
-        except:
-            pass
+    push_message_all(message)
+
+# ---------------- APScheduler للتذكير التلقائي ---------------- #
+scheduler = BackgroundScheduler(timezone="Asia/Riyadh")
+tz = pytz.timezone('Asia/Riyadh')
+pt = PrayTimes('ISNA')
+latitude, longitude = 24.7136, 46.6753  # الرياض
+
+def schedule_daily_prayers():
+    now = datetime.now(tz)
+    times = pt.getTimes(now, (latitude, longitude), +3)
+    prayer_times = {prayer: datetime.strptime(times[prayer], '%H:%M').replace(
+        year=now.year, month=now.month, day=now.day, tzinfo=tz) for prayer in ['Fajr','Dhuhr','Asr','Maghrib','Isha']}
+
+    for prayer, p_time in prayer_times.items():
+        notify_time = p_time - timedelta(minutes=10)
+        now_time = datetime.now(tz)
+        if notify_time < now_time:
+            notify_time = now_time + timedelta(seconds=5)
+
+        if prayer == 'Fajr':
+            scheduler.add_job(lambda: send_adhkar_list_to_all(morning_adhkar),
+                              trigger='date', run_date=notify_time)
+        elif prayer == 'Maghrib':
+            scheduler.add_job(lambda: send_adhkar_list_to_all(evening_adhkar),
+                              trigger='date', run_date=notify_time)
+        elif prayer == 'Isha':
+            scheduler.add_job(lambda: send_adhkar_list_to_all(sleep_adhkar),
+                              trigger='date', run_date=notify_time)
+
+# جدولة الصلاة كل يوم عند منتصف الليل
+scheduler.add_job(schedule_daily_prayers, 'cron', hour=0, minute=0)
+
+# جدولة أذكار الصباح (06:00)، المساء (18:00)، النوم (22:30)
+scheduler.add_job(lambda: send_adhkar_list_to_all(morning_adhkar), 'cron', hour=6, minute=0)
+scheduler.add_job(lambda: send_adhkar_list_to_all(evening_adhkar), 'cron', hour=18, minute=0)
+scheduler.add_job(lambda: send_adhkar_list_to_all(sleep_adhkar), 'cron', hour=22, minute=30)
+
+scheduler.start()
 
 # ---------------- Webhook ---------------- #
 @app.route("/", methods=["GET"])
@@ -138,7 +140,7 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        pass
+        logging.error("Invalid signature")
     return "OK", 200
 
 # ---------------- حماية الروابط ---------------- #
@@ -171,7 +173,6 @@ def handle_message(event):
         user_text = event.message.text.strip()
         user_id = event.source.user_id
 
-        # تسجيل المستخدمين والقروبات تلقائي
         first_time = False
         if user_id not in target_users:
             target_users.add(user_id)
@@ -183,15 +184,15 @@ def handle_message(event):
         save_data()
         ensure_user_counts(user_id)
 
-        # إرسال ذكر/دعاء/حديث عند التسجيل لأول مرة
+        # إرسال ذكر عند أول رسالة لأي مستخدم أو قروب
         if first_time:
             try:
                 category = random.choice(["duas", "adhkar", "hadiths"])
                 if category in content and content[category]:
                     message = random.choice(content[category])
-                    line_bot_api.push_message(user_id, TextSendMessage(text=message))
-            except:
-                pass
+                    push_message_all(message)
+            except Exception as e:
+                logging.error(f"Error sending first message: {e}")
             return
 
         # حماية الروابط
@@ -204,8 +205,8 @@ def handle_message(event):
                 with open("help.txt", "r", encoding="utf-8") as f:
                     help_text = f.read()
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
-            except:
-                pass
+            except Exception as e:
+                logging.error(f"Error sending help: {e}")
             return
 
         # عرض التسبيح
@@ -214,8 +215,8 @@ def handle_message(event):
             status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33\nاستغفر الله: {counts['استغفر الله']}/33"
             try:
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-            except:
-                pass
+            except Exception as e:
+                logging.error(f"Error sending tasbih: {e}")
             return
 
         # التسبيح (زيادة العد)
@@ -227,8 +228,8 @@ def handle_message(event):
             status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33\nاستغفر الله: {counts['استغفر الله']}/33"
             try:
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-            except:
-                pass
+            except Exception as e:
+                logging.error(f"Error sending tasbih increment: {e}")
             return
 
         # أمر ذكرني يدوي
@@ -236,8 +237,8 @@ def handle_message(event):
             send_random_message_to_all()
             return
 
-    except:
-        pass
+    except Exception as e:
+        logging.error(f"Error in handle_message: {e}")
 
 # ---------------- تشغيل التطبيق ---------------- #
 if __name__ == "__main__":
