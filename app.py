@@ -3,6 +3,9 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import os, random, json, threading, time
+from datetime import datetime, timedelta
+import pytz
+from praytimes import PrayTimes  # pip install praytimes
 from dotenv import load_dotenv
 
 # ---------------- إعداد البوت ---------------- #
@@ -22,7 +25,7 @@ CONTENT_FILE = "content.json"
 def load_data():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({"users": [], "groups": [], "tasbih": {}, "notifications_off":[]}, f, ensure_ascii=False, indent=2)
+            json.dump({"users": [], "groups": [], "tasbih": {}}, f, ensure_ascii=False, indent=2)
         return set(), set(), {}
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -33,8 +36,7 @@ def save_data():
         json.dump({
             "users": list(target_users),
             "groups": list(target_groups),
-            "tasbih": tasbih_counts,
-            "notifications_off":[]
+            "tasbih": tasbih_counts
         }, f, ensure_ascii=False, indent=2)
 
 target_users, target_groups, tasbih_counts = load_data()
@@ -45,7 +47,69 @@ if os.path.exists(CONTENT_FILE):
     with open(CONTENT_FILE, "r", encoding="utf-8") as f:
         content = json.load(f)
 
-# ---------------- إرسال ذكر/دعاء/حديث ---------------- #
+# ---------------- أذكار الصباح والمساء والنوم ---------------- #
+morning_adhkar = [
+    "اللهم بك أصبحنا وبك أمسينا وبك نحيا وبك نموت",
+    "أصبحنا على فطرة الإسلام وعلى كلمة الإخلاص وعلى دين نبينا محمد"
+]
+
+evening_adhkar = [
+    "أمسينا على فطرة الإسلام وعلى كلمة الإخلاص وعلى دين نبينا محمد",
+    "اللهم ما أمسينا فيه من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك"
+]
+
+sleep_adhkar = [
+    "باسمك ربي وضعت جنبي وبك أرفعه",
+    "اللهم قني عذابك يوم تبعث عبادك"
+]
+
+def send_adhkar_list_to_all(adhkar_list):
+    for message in adhkar_list:
+        for uid in target_users:
+            try:
+                line_bot_api.push_message(uid, TextSendMessage(text=message))
+            except:
+                pass
+        for gid in target_groups:
+            try:
+                line_bot_api.push_message(gid, TextSendMessage(text=message))
+            except:
+                pass
+
+# ---------------- التذكير حسب أوقات الصلاة + الأذكار ---------------- #
+def schedule_prayer_adhkar():
+    tz = pytz.timezone('Asia/Riyadh')
+    pt = PrayTimes('ISNA')
+    latitude, longitude = 24.7136, 46.6753  # موقع الرياض
+
+    while True:
+        now = datetime.now(tz)
+        times = pt.getTimes(now, (latitude, longitude), +3)
+        prayer_times = {prayer: datetime.strptime(times[prayer], '%H:%M').replace(
+            year=now.year, month=now.month, day=now.day, tzinfo=tz) for prayer in ['Fajr','Dhuhr','Asr','Maghrib','Isha']}
+
+        # قبل كل صلاة بـ 10 دقائق
+        for prayer, p_time in prayer_times.items():
+            notify_time = p_time - timedelta(minutes=10)
+            wait_seconds = (notify_time - datetime.now(tz)).total_seconds()
+            if wait_seconds > 0:
+                time.sleep(wait_seconds)
+                # إرسال الأذكار حسب الصلاة
+                if prayer == 'Fajr':
+                    send_adhkar_list_to_all(morning_adhkar)
+                elif prayer == 'Maghrib':
+                    send_adhkar_list_to_all(evening_adhkar)
+                elif prayer == 'Isha':
+                    send_adhkar_list_to_all(sleep_adhkar)
+
+        # الانتظار لبداية اليوم التالي
+        tomorrow = now + timedelta(days=1)
+        next_day = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 0, tzinfo=tz)
+        time.sleep((next_day - datetime.now(tz)).total_seconds())
+
+threading.Thread(target=schedule_prayer_adhkar, daemon=True).start()
+
+# ---------------- إرسال ذكر/دعاء/حديث عشوائي ---------------- #
 def send_random_message_to_all():
     category = random.choice(["duas", "adhkar", "hadiths"])
     message = "لا يوجد محتوى"
@@ -61,14 +125,6 @@ def send_random_message_to_all():
             line_bot_api.push_message(gid, TextSendMessage(text=message))
         except:
             pass
-
-# ---------------- التذكير التلقائي ---------------- #
-def scheduled_messages():
-    while True:
-        send_random_message_to_all()
-        time.sleep(5*60*60)  # خمس مرات يومياً تقريباً
-
-threading.Thread(target=scheduled_messages, daemon=True).start()
 
 # ---------------- Webhook ---------------- #
 @app.route("/", methods=["GET"])
