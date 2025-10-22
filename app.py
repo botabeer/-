@@ -167,6 +167,13 @@ def handle_message(event):
                 tasbih_counts[user_id][key] += 1
                 save_data()
 
+            # إشعار اكتمال الفردي
+            if tasbih_counts[user_id][key] == tasbih_limits:
+                try:
+                    line_bot_api.push_message(user_id, TextSendMessage(text=f"تم اكتمال {key} 33 مرة!"))
+                except:
+                    pass
+
             counts = tasbih_counts[user_id]
             status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33\nاستغفر الله: {counts['استغفر الله']}/33"
             try:
@@ -174,20 +181,10 @@ def handle_message(event):
             except:
                 pass
 
-            # إشعار اكتمال ذكر فردي
-            if counts[key] == tasbih_limits:
-                try:
-                    line_bot_api.push_message(user_id, TextSendMessage(text=f"تم اكتمال {key} 33 مرة!"))
-                except:
-                    pass
-
             # إشعار اكتمال الأربع أذكار
             if all(counts[k] >= tasbih_limits for k in ["سبحان الله","الحمد لله","الله أكبر","استغفر الله"]):
                 try:
-                    line_bot_api.push_message(
-                        user_id,
-                        TextSendMessage(text="جزاك الله خير\nوجعل الله لك ولو والديك الجنة")
-                    )
+                    line_bot_api.push_message(user_id, TextSendMessage(text="جزاك الله خير\nوجعل الله لك ولو والديك الجنة"))
                 except:
                     pass
             return
@@ -197,25 +194,23 @@ def handle_message(event):
             category = random.choice(["duas", "adhkar", "hadiths", "quran"])
             message = random.choice(content.get(category, ["لا يوجد محتوى"]))
 
-            # إرسال للجميع
+            # إرسال لجميع المستخدمين والمجموعات
             for uid in target_users:
                 try:
-                    line_bot_api.push_message(uid, TextSendMessage(text=f"[{category.upper()}] {message}"))
+                    line_bot_api.push_message(uid, TextSendMessage(text=message))
                 except:
                     pass
-
             for gid in target_groups:
                 try:
-                    line_bot_api.push_message(gid, TextSendMessage(text=f"[{category.upper()}] {message}"))
+                    line_bot_api.push_message(gid, TextSendMessage(text=message))
                 except:
                     pass
 
-            # عرض للمستخدم الذي كتب الأمر للتأكيد
+            # تأكيد للمستخدم
             try:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"[{category.upper()}] {message}"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم إرسال الذكر أو الدعاء للجميع"))
             except:
                 pass
-
             return
 
         # ---------------- إيقاف/تشغيل التذكير ---------------- #
