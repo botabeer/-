@@ -61,8 +61,7 @@ def send_random_message_to_all():
 def scheduled_messages():
     while True:
         send_random_message_to_all()
-        # خمس مرات يوميًا => كل 4-5 ساعات تقريبًا (3600*4 إلى 3600*5)
-        time.sleep(random.randint(14400, 18000))
+        time.sleep(random.randint(14400, 18000))  # كل 4-5 ساعات
 
 threading.Thread(target=scheduled_messages, daemon=True).start()
 
@@ -78,7 +77,7 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        pass  # تجاهل أي أخطاء توقيع
+        pass
     return "OK", 200
 
 # ---------------- حماية الروابط ---------------- #
@@ -114,12 +113,10 @@ def handle_message(event):
         # ---------------- تسجيل المستخدمين والقروبات تلقائي ---------------- #
         first_time = False
 
-        # تسجيل المستخدم
         if user_id not in target_users:
             target_users.add(user_id)
             first_time = True
 
-        # تسجيل القروب إذا موجود
         gid = getattr(event.source, 'group_id', None)
         if gid and gid not in target_groups:
             target_groups.add(gid)
@@ -157,11 +154,12 @@ def handle_message(event):
                 pass
             return
 
-        # ---------------- التسبيح (زيادة العد) ---------------- #
+        # ---------------- التسبيح (زيادة العد حتى 33 فقط) ---------------- #
         if user_text in ("سبحان الله","الحمد لله","الله أكبر","استغفر الله","استغفرالله"):
             key = "استغفر الله" if "استغفر" in user_text else user_text
-            tasbih_counts[user_id][key] += 1
-            save_data()
+            if tasbih_counts[user_id][key] < tasbih_limits:
+                tasbih_counts[user_id][key] += 1
+                save_data()
             counts = tasbih_counts[user_id]
             status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33\nاستغفر الله: {counts['استغفر الله']}/33"
             try:
@@ -191,7 +189,7 @@ def handle_message(event):
             return
 
     except:
-        pass  # تجاهل أي أخطاء دون إرسال رسائل
+        pass
 
 # ---------------- تشغيل التطبيق ---------------- #
 if __name__ == "__main__":
