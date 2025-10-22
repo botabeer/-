@@ -66,7 +66,6 @@ def ensure_user_counts(uid):
 
 # ---------------- إعادة ضبط التسبيح يوميًا ---------------- #
 last_reset_date = datetime.now().date()
-
 def reset_tasbih_daily():
     global last_reset_date
     now = datetime.now()
@@ -92,8 +91,8 @@ def send_random_message():
 
 # ---------------- جدولة APScheduler ---------------- #
 scheduler = BackgroundScheduler()
-scheduler.add_job(reset_tasbih_daily, 'interval', minutes=1)  # تفقد يومياً كل دقيقة لإعادة الضبط
-scheduler.add_job(send_random_message, 'interval', seconds=random.randint(3600, 5400))  # التذكير التلقائي
+scheduler.add_job(reset_tasbih_daily, 'interval', minutes=1)
+scheduler.add_job(send_random_message, 'interval', seconds=random.randint(3600, 5400))
 scheduler.start()
 
 # ---------------- حماية الروابط ---------------- #
@@ -122,7 +121,7 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        pass  # تجاهل أي خطأ
+        pass
     return "OK", 200
 
 # ---------------- معالجة الرسائل ---------------- #
@@ -134,7 +133,7 @@ def handle_message(event):
 
     first_time = False
 
-    # تسجيل المستخدم والقروب عند أول رسالة مهما كانت
+    # تسجيل المستخدم والقروب عند أول رسالة
     if user_id not in target_users:
         target_users.add(user_id)
         first_time = True
@@ -149,20 +148,28 @@ def handle_message(event):
     if handle_links(event, user_id):
         return
 
-    # إرسال ذكر أو دعاء تلقائي بعد التسجيل
-    if first_time:
+    # دالة إرسال ذكر أو دعاء
+    def send_test_message(tid):
         message = random.choice(content.get("duas", ["لا يوجد محتوى"]))
         if random.random() < 0.5:
             message += "\nاستغفر الله"
         try:
-            line_bot_api.push_message(user_id, TextSendMessage(text=message))
+            line_bot_api.push_message(tid, TextSendMessage(text=message))
         except:
             pass
+
+    # أول رسالة → إرسال ذكر أو دعاء للمستخدم والقروب
+    if first_time:
+        send_test_message(user_id)
         if gid:
-            try:
-                line_bot_api.push_message(gid, TextSendMessage(text=message))
-            except:
-                pass
+            send_test_message(gid)
+
+    # أمر "ذكرني" → إرسال ذكر أو دعاء لجميع المستخدمين والقروبات
+    if user_text.lower() == "ذكرني":
+        for tid in list(target_users) + list(target_groups):
+            if tid not in notifications_off:
+                send_test_message(tid)
+        return
 
     # أمر المساعدة
     if user_text.lower() == "مساعدة":
@@ -175,20 +182,6 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
         except:
             pass
-        return
-
-    # أمر ذكرني
-    if user_text.lower() == "ذكرني":
-        all_ids = list(target_users) + list(target_groups)
-        message = random.choice(content.get("duas", ["لا يوجد محتوى"]))
-        if random.random() < 0.5:
-            message += "\nاستغفر الله"
-        for tid in all_ids:
-            if tid not in notifications_off:
-                try:
-                    line_bot_api.push_message(tid, TextSendMessage(text=message))
-                except:
-                    pass
         return
 
     # عرض التسبيح
