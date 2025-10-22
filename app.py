@@ -2,12 +2,13 @@ from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import os, random, json, time, logging
+import os, random, json, logging
 from datetime import datetime, timedelta
 import pytz
 from praytimes import PrayTimes
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
+from functools import partial
 
 # ---------------- إعداد البوت ---------------- #
 load_dotenv()
@@ -98,33 +99,37 @@ latitude, longitude = 24.7136, 46.6753  # الرياض
 
 def schedule_daily_prayers():
     now = datetime.now(tz)
-    times = pt.getTimes(now, (latitude, longitude), +3)
-    prayer_times = {prayer: datetime.strptime(times[prayer], '%H:%M').replace(
-        year=now.year, month=now.month, day=now.day, tzinfo=tz) for prayer in ['Fajr','Dhuhr','Asr','Maghrib','Isha']}
+    times = pt.getTimes(now, (latitude, longitude))  # توقيت محلي مباشر
+    prayer_times = {}
+    for prayer in ['Fajr','Dhuhr','Asr','Maghrib','Isha']:
+        prayer_time_str = times[prayer]
+        prayer_dt = datetime.strptime(prayer_time_str, '%H:%M').replace(
+            year=now.year, month=now.month, day=now.day, tzinfo=tz)
+        prayer_times[prayer] = prayer_dt
 
     for prayer, p_time in prayer_times.items():
         notify_time = p_time - timedelta(minutes=10)
-        now_time = datetime.now(tz)
-        if notify_time < now_time:
-            notify_time = now_time + timedelta(seconds=5)
+        if notify_time < datetime.now(tz):
+            notify_time = datetime.now(tz) + timedelta(seconds=5)
 
         if prayer == 'Fajr':
-            scheduler.add_job(lambda: send_adhkar_list_to_all(morning_adhkar),
+            scheduler.add_job(partial(send_adhkar_list_to_all, morning_adhkar),
                               trigger='date', run_date=notify_time)
         elif prayer == 'Maghrib':
-            scheduler.add_job(lambda: send_adhkar_list_to_all(evening_adhkar),
+            scheduler.add_job(partial(send_adhkar_list_to_all, evening_adhkar),
                               trigger='date', run_date=notify_time)
         elif prayer == 'Isha':
-            scheduler.add_job(lambda: send_adhkar_list_to_all(sleep_adhkar),
+            scheduler.add_job(partial(send_adhkar_list_to_all, sleep_adhkar),
                               trigger='date', run_date=notify_time)
 
-# جدولة الصلاة كل يوم عند منتصف الليل
+# جدولة الصلاة عند بدء التطبيق + كل يوم عند منتصف الليل
+schedule_daily_prayers()
 scheduler.add_job(schedule_daily_prayers, 'cron', hour=0, minute=0)
 
 # جدولة أذكار الصباح (06:00)، المساء (18:00)، النوم (22:30)
-scheduler.add_job(lambda: send_adhkar_list_to_all(morning_adhkar), 'cron', hour=6, minute=0)
-scheduler.add_job(lambda: send_adhkar_list_to_all(evening_adhkar), 'cron', hour=18, minute=0)
-scheduler.add_job(lambda: send_adhkar_list_to_all(sleep_adhkar), 'cron', hour=22, minute=30)
+scheduler.add_job(partial(send_adhkar_list_to_all, morning_adhkar), 'cron', hour=6, minute=0)
+scheduler.add_job(partial(send_adhkar_list_to_all, evening_adhkar), 'cron', hour=18, minute=0)
+scheduler.add_job(partial(send_adhkar_list_to_all, sleep_adhkar), 'cron', hour=22, minute=30)
 
 scheduler.start()
 
