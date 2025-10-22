@@ -22,28 +22,27 @@ CONTENT_FILE = "content.json"
 def load_data():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({"users": [], "groups": [], "tasbih": {}, "notifications_off": []}, f, ensure_ascii=False, indent=2)
-        return set(), set(), {}, set()
+            json.dump({"users": [], "groups": [], "tasbih": {}}, f, ensure_ascii=False, indent=2)
+        return set(), set(), {}
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-        return set(data.get("users", [])), set(data.get("groups", [])), data.get("tasbih", {}), set(data.get("notifications_off", []))
+        return set(data.get("users", [])), set(data.get("groups", [])), data.get("tasbih", {})
 
 def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump({
             "users": list(target_users),
             "groups": list(target_groups),
-            "tasbih": tasbih_counts,
-            "notifications_off": list(notifications_off)
+            "tasbih": tasbih_counts
         }, f, ensure_ascii=False, indent=2)
 
-target_users, target_groups, tasbih_counts, notifications_off = load_data()
+target_users, target_groups, tasbih_counts = load_data()
 
 # ---------------- تحميل المحتوى ---------------- #
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
     content = json.load(f)
 
-# ---------------- إرسال ذكر/دعاء تلقائي ---------------- #
+# ---------------- إرسال ذكر/دعاء ---------------- #
 def send_random_message_to_all():
     category = random.choice(["duas", "adhkar", "hadiths"])
     message = random.choice(content.get(category, ["لا يوجد محتوى"]))
@@ -58,11 +57,11 @@ def send_random_message_to_all():
         except:
             pass
 
+# ---------------- التذكير التلقائي ---------------- #
 def scheduled_messages():
     while True:
         send_random_message_to_all()
-        # خمس مرات يوميًا => كل 4-5 ساعات تقريبًا (3600*4 إلى 3600*5)
-        time.sleep(random.randint(14400, 18000))
+        time.sleep(5 * 60 * 60)  # تقريبًا خمس مرات يومياً
 
 threading.Thread(target=scheduled_messages, daemon=True).start()
 
@@ -78,7 +77,7 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        pass  # تجاهل أي أخطاء توقيع
+        pass
     return "OK", 200
 
 # ---------------- حماية الروابط ---------------- #
@@ -111,33 +110,28 @@ def handle_message(event):
         user_text = event.message.text.strip()
         user_id = event.source.user_id
 
-        # ---------------- تسجيل المستخدمين والقروبات تلقائي ---------------- #
+        # تسجيل المستخدمين والقروبات تلقائي
         first_time = False
-
-        # تسجيل المستخدم
         if user_id not in target_users:
             target_users.add(user_id)
             first_time = True
-
-        # تسجيل القروب إذا موجود
         gid = getattr(event.source, 'group_id', None)
         if gid and gid not in target_groups:
             target_groups.add(gid)
             first_time = True
-
         save_data()
         ensure_user_counts(user_id)
 
-        # ---------------- إرسال ذكر/دعاء عند أول رسالة ---------------- #
+        # إرسال ذكر/دعاء عند التسجيل لأول مرة
         if first_time:
             send_random_message_to_all()
             return
 
-        # ---------------- حماية الروابط ---------------- #
+        # حماية الروابط
         if handle_links(event, user_id):
             return
 
-        # ---------------- أوامر المساعدة ---------------- #
+        # أوامر المساعدة
         if user_text.lower() == "مساعدة":
             try:
                 with open("help.txt", "r", encoding="utf-8") as f:
@@ -147,7 +141,7 @@ def handle_message(event):
                 pass
             return
 
-        # ---------------- عرض التسبيح ---------------- #
+        # عرض التسبيح
         if user_text.lower() == "تسبيح":
             counts = tasbih_counts[user_id]
             status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33\nاستغفر الله: {counts['استغفر الله']}/33"
@@ -157,7 +151,7 @@ def handle_message(event):
                 pass
             return
 
-        # ---------------- التسبيح (زيادة العد) ---------------- #
+        # التسبيح (زيادة العد)
         if user_text in ("سبحان الله","الحمد لله","الله أكبر","استغفر الله","استغفرالله"):
             key = "استغفر الله" if "استغفر" in user_text else user_text
             tasbih_counts[user_id][key] += 1
@@ -170,28 +164,13 @@ def handle_message(event):
                 pass
             return
 
-        # ---------------- إيقاف التذكير ---------------- #
-        if user_text.lower() == "إيقاف":
-            target_id = gid if gid else user_id
-            notifications_off.add(target_id)
-            save_data()
-            return
-
-        # ---------------- تشغيل التذكير ---------------- #
-        if user_text.lower() == "تشغيل":
-            target_id = gid if gid else user_id
-            if target_id in notifications_off:
-                notifications_off.remove(target_id)
-                save_data()
-            return
-
-        # ---------------- أمر ذكرني ---------------- #
+        # أمر ذكرني يدوي
         if user_text.lower() == "ذكرني":
             send_random_message_to_all()
             return
 
     except:
-        pass  # تجاهل أي أخطاء دون إرسال رسائل
+        pass
 
 # ---------------- تشغيل التطبيق ---------------- #
 if __name__ == "__main__":
