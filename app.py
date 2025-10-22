@@ -99,6 +99,7 @@ def handle_links(event, user_id):
 
 # ---------------- تسبيح ---------------- #
 tasbih_limits = 33
+
 def ensure_user_counts(uid):
     if uid not in tasbih_counts:
         tasbih_counts[uid] = {"سبحان الله":0, "الحمد لله":0, "الله أكبر":0, "استغفر الله":0}
@@ -154,18 +155,43 @@ def handle_message(event):
                 pass
             return
 
-        # ---------------- التسبيح (زيادة العد حتى 33 فقط) ---------------- #
+        # ---------------- التسبيح (زيادة العد حتى 33 مع إشعارات الاكتمال) ---------------- #
         if user_text in ("سبحان الله","الحمد لله","الله أكبر","استغفر الله","استغفرالله"):
             key = "استغفر الله" if "استغفر" in user_text else user_text
+            completed = False
+
             if tasbih_counts[user_id][key] < tasbih_limits:
                 tasbih_counts[user_id][key] += 1
                 save_data()
+                if tasbih_counts[user_id][key] == tasbih_limits:
+                    completed = True  # تم اكتمال التسبيح للذكر هذا
+
             counts = tasbih_counts[user_id]
             status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33\nاستغفر الله: {counts['استغفر الله']}/33"
+
+            # رسالة العد
             try:
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
             except:
                 pass
+
+            # رسالة اكتمال ذكر فردي
+            if completed:
+                try:
+                    line_bot_api.push_message(user_id, TextSendMessage(text=f"تم اكتمال {key} 33 مرة!"))
+                except:
+                    pass
+
+            # رسالة اكتمال جميع الأذكار الأربعة مع دعاء للمستخدم ولوالديه
+            if all(counts[k] >= tasbih_limits for k in ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]):
+                try:
+                    line_bot_api.push_message(
+                        user_id,
+                        TextSendMessage(text="جزاك الله خير، وجعل الله لك ولو والديك من الخير والبركة.")
+                    )
+                except:
+                    pass
+
             return
 
         # ---------------- إيقاف التذكير ---------------- #
