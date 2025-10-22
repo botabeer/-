@@ -43,36 +43,24 @@ target_users, target_groups, tasbih_counts, notifications_off = load_data()
 with open(CONTENT_FILE, "r", encoding="utf-8") as f:
     content = json.load(f)
 
-# ---------------- تخزين آخر رسالة لكل مستخدم ---------------- #
-last_message_sent = {}  # {user_id: "النص الأخير"}
+# ---------------- تخزين آخر رسالة لكل مستخدم/مجموعة ---------------- #
+last_message_sent = {}
 
 # ---------------- إرسال ذكر/دعاء تلقائي ---------------- #
 def send_random_message_to_all():
-    for uid in target_users:
-        if uid in notifications_off:
-            continue
-        try:
-            category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-            options = content.get(category, ["لا يوجد محتوى"])
-            last_msg = last_message_sent.get(uid, "")
-            message = random.choice([m for m in options if m != last_msg] or options)
-            line_bot_api.push_message(uid, TextSendMessage(text=message))
-            last_message_sent[uid] = message
-        except:
-            pass
-
-    for gid in target_groups:
-        if gid in notifications_off:
-            continue
-        try:
-            category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-            options = content.get(category, ["لا يوجد محتوى"])
-            last_msg = last_message_sent.get(gid, "")
-            message = random.choice([m for m in options if m != last_msg] or options)
-            line_bot_api.push_message(gid, TextSendMessage(text=message))
-            last_message_sent[gid] = message
-        except:
-            pass
+    for target_set in (target_users, target_groups):
+        for target in target_set:
+            if target in notifications_off:
+                continue
+            try:
+                category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+                options = content.get(category, ["لا يوجد محتوى"])
+                last_msg = last_message_sent.get(target, "")
+                message = random.choice([m for m in options if m != last_msg] or options)
+                line_bot_api.push_message(target, TextSendMessage(text=message))
+                last_message_sent[target] = message
+            except:
+                pass
 
 def scheduled_messages():
     while True:
@@ -104,10 +92,7 @@ def handle_links(event, user_id):
         if "http://" in text or "https://" in text or "www." in text:
             links_count[user_id] = links_count.get(user_id, 0) + 1
             if links_count[user_id] >= 2:
-                try:
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
-                except:
-                    pass
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="الرجاء عدم تكرار الروابط"))
             return True
     except:
         pass
@@ -128,27 +113,25 @@ def handle_message(event):
         gid = getattr(event.source, 'group_id', None)
         first_time = False
 
-        # ---------------- تسجيل المستخدمين والقروبات تلقائي ---------------- #
+        # تسجيل المستخدمين والقروبات تلقائيًا
         if user_id not in target_users:
             target_users.add(user_id)
             first_time = True
-
         if gid and gid not in target_groups:
             target_groups.add(gid)
             first_time = True
-
         save_data()
         ensure_user_counts(user_id)
 
-        # ---------------- إرسال ذكر/دعاء عند أول رسالة ---------------- #
+        # إرسال ذكر/دعاء عند أول رسالة
         if first_time:
             send_random_message_to_all()
 
-        # ---------------- حماية الروابط ---------------- #
+        # حماية الروابط
         if handle_links(event, user_id):
             return
 
-        # ---------------- أوامر المساعدة ---------------- #
+        # أمر المساعدة
         if user_text.lower() == "مساعدة":
             if user_id not in target_users:
                 target_users.add(user_id)
@@ -163,17 +146,14 @@ def handle_message(event):
                 pass
             return
 
-        # ---------------- عرض التسبيح ---------------- #
+        # عرض التسبيح
         if user_text.lower() == "تسبيح":
             counts = tasbih_counts[user_id]
             status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33\nاستغفر الله: {counts['استغفر الله']}/33"
-            try:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-            except:
-                pass
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
             return
 
-        # ---------------- التسبيح (زيادة العد لكل الأذكار) ---------------- #
+        # التسبيح (زيادة العد)
         clean_text = user_text.replace(" ", "")
         if clean_text in ("سبحانالله", "الحمدلله", "اللهأكبر", "استغفرالله"):
             key_map = {
@@ -183,52 +163,34 @@ def handle_message(event):
                 "استغفرالله": "استغفر الله"
             }
             key = key_map[clean_text]
-            completed = False
+
             if tasbih_counts[user_id][key] < tasbih_limits:
                 tasbih_counts[user_id][key] += 1
                 save_data()
                 if tasbih_counts[user_id][key] == tasbih_limits:
-                    completed = True
+                    line_bot_api.push_message(user_id, TextSendMessage(text=f"تم اكتمال {key} 33 مرة!"))
 
             counts = tasbih_counts[user_id]
             status = f"سبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33\nاستغفر الله: {counts['استغفر الله']}/33"
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
 
-            try:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status))
-            except:
-                pass
-
-            if completed:
-                try:
-                    line_bot_api.push_message(user_id, TextSendMessage(text=f"تم اكتمال {key} 33 مرة!"))
-                except:
-                    pass
-
+            # عند اكتمال الأربع أذكار
             if all(counts[k] >= tasbih_limits for k in ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]):
-                try:
-                    line_bot_api.push_message(
-                        user_id,
-                        TextSendMessage(text="جزاك الله خير\nوجعل الله لك ولو والديك الجنة\nوكتب أجركم جميعًا")
-                    )
-                except:
-                    pass
+                line_bot_api.push_message(user_id, TextSendMessage(text="جزاك الله خير\nوجعل الله لك ولوالديك الجنة"))
             return
 
-        # ---------------- أمر ذكرني ---------------- #
+        # أمر ذكرني (يرسل لك أولًا ثم للجميع)
         if user_text.lower() == "ذكرني":
-            try:
-                category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-                options = content.get(category, ["لا يوجد محتوى"])
-                last_msg = last_message_sent.get(user_id, "")
-                message = random.choice([m for m in options if m != last_msg] or options)
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
-                last_message_sent[user_id] = message
-                send_random_message_to_all()
-            except:
-                pass
+            category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+            options = content.get(category, ["لا يوجد محتوى"])
+            last_msg = last_message_sent.get(user_id, "")
+            message = random.choice([m for m in options if m != last_msg] or options)
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
+            last_message_sent[user_id] = message
+            send_random_message_to_all()
             return
 
-        # ---------------- إيقاف/تشغيل التذكير ---------------- #
+        # إيقاف وتشغيل التذكير
         if user_text.lower() == "إيقاف":
             target_id = gid if gid else user_id
             notifications_off.add(target_id)
@@ -242,8 +204,8 @@ def handle_message(event):
                 save_data()
             return
 
-    except:
-        pass
+    except Exception as e:
+        print("Error:", e)
 
 # ---------------- تشغيل التطبيق ---------------- #
 if __name__ == "__main__":
