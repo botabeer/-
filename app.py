@@ -99,7 +99,7 @@ latitude, longitude = 24.7136, 46.6753  # الرياض
 
 def schedule_daily_prayers():
     now = datetime.now(tz)
-    times = pt.getTimes(now, (latitude, longitude))  # توقيت محلي مباشر
+    times = pt.getTimes(now, (latitude, longitude), 3)  # +3 توقيت الرياض
     prayer_times = {}
     for prayer in ['Fajr','Dhuhr','Asr','Maghrib','Isha']:
         prayer_time_str = times[prayer]
