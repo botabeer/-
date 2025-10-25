@@ -32,7 +32,7 @@ CONTENT_FILE = "content.json"
 
 def load_data():
     if not os.path.exists(DATA_FILE):
-        return {"users": [], "groups": [], "tasbih": {}, "notifications_off": [],
+        return {"users": [], "groups": [], "tasbih": {}, "notifications_off": {},
                 "last_morning": {}, "last_evening": {}, "last_sleep": {}}
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -43,9 +43,9 @@ def save_data():
 
 def load_content():
     if not os.path.exists(CONTENT_FILE):
-        return {"duas": ["اللهم اغفر لنا"], "adhkar": ["سبحان الله"], 
-                "hadiths": ["حديث شريف"], "quran": ["آية قرآنية"], 
-                "morning": ["أذكار الصباح"], "evening": ["أذكار المساء"], 
+        return {"duas": ["اللهم اغفر لنا"], "adhkar": ["سبحان الله"],
+                "hadiths": ["حديث شريف"], "quran": ["آية قرآنية"],
+                "morning": ["أذكار الصباح"], "evening": ["أذكار المساء"],
                 "sleep": ["أذكار النوم"]}
     with open(CONTENT_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -58,7 +58,6 @@ content = load_content()
 # ———————————
 
 def send_message(to, text):
-    """إرسال رسالة لمستخدم أو مجموعة محددة"""
     try:
         line_bot_api.push_message(to, TextSendMessage(text=text))
         return True
@@ -67,7 +66,6 @@ def send_message(to, text):
         return False
 
 def send_broadcast(text):
-    """إرسال رسالة لجميع المستخدمين والمجموعات (مع احترام إعدادات الإيقاف)"""
     for uid in data["users"]:
         if uid not in data["notifications_off"]:
             send_message(uid, text)
@@ -76,6 +74,27 @@ def send_broadcast(text):
         if gid not in data["notifications_off"]:
             send_message(gid, text)
             time.sleep(0.5)
+
+# رسالة ترحيب
+def send_welcome_message(target_id, is_group=False):
+    welcome_text = """🌙 *السلام عليكم ورحمة الله وبركاته*
+
+✨ مرحبًا بك في بوت *ذكّرني*
+
+📿 سيساعدك هذا البوت على:
+• تذكّر أذكار الصباح والمساء والنوم
+• متابعة التسبيح اليومي
+• الحصول على أدعية وآيات قرآنية
+
+🔹 اكتب *مساعدة* لعرض قائمة الأوامر
+
+🤲 جزاك الله خيرًا"""
+    try:
+        send_message(target_id, welcome_text)
+        return True
+    except Exception as e:
+        print(f"⚠️ خطأ في إرسال رسالة الترحيب: {e}")
+        return False
 
 # ———————————
 # 📿 نظام التسبيح
@@ -86,7 +105,7 @@ tasbih_phrases = ["سبحان الله", "الحمد لله", "الله أكبر
 def handle_tasbih(user_id, text):
     if user_id not in data["tasbih"]:
         data["tasbih"][user_id] = {p: 0 for p in tasbih_phrases}
-    
+
     user_tasbih = data["tasbih"][user_id]
     if text in tasbih_phrases:
         user_tasbih[text] += 1
@@ -106,7 +125,7 @@ def handle_tasbih(user_id, text):
     return None
 
 # ———————————
-# ⏰ نظام التذكير اليومي
+# ⏰ التذكيرات اليومية
 # ———————————
 
 def send_morning_adhkar():
@@ -211,13 +230,21 @@ def handle_message(event):
     text = event.message.text.strip()
     target_id = user_id or group_id
 
-    # تسجيل المستخدمين والمجموعات
+    # تسجيل المستخدمين والمجموعات مع إرسال رسالة ترحيبية
+    is_new_user = False
+    is_new_group = False
+
     if user_id and user_id not in data["users"]:
         data["users"].append(user_id)
+        is_new_user = True
         save_data()
+        send_welcome_message(user_id, is_group=False)
+
     if group_id and group_id not in data["groups"]:
         data["groups"].append(group_id)
+        is_new_group = True
         save_data()
+        send_welcome_message(group_id, is_group=True)
 
     # حماية من الروابط
     if "http://" in text or "https://" in text or "www." in text:
@@ -259,6 +286,10 @@ def handle_message(event):
         if target_id in data["notifications_off"]:
             data["notifications_off"].remove(target_id)
             save_data()
+        try:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ تم تفعيل التذكيرات التلقائية"))
+        except:
+            pass
         return
 
     # أمر: إيقاف
@@ -266,9 +297,13 @@ def handle_message(event):
         if target_id not in data["notifications_off"]:
             data["notifications_off"].append(target_id)
             save_data()
+        try:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⏸️ تم إيقاف التذكيرات التلقائية"))
+        except:
+            pass
         return
 
-    # أمر: ذكرني (إرسال تذكير فوري للجميع فقط)
+    # أمر: ذكرني (إرسال التذكير فقط بدون رسالة رد)
     if text.lower() == "ذكرني":
         category = random.choice(["duas", "adhkar", "hadiths", "quran"])
         msg = random.choice(content.get(category, ["لا يوجد محتوى"]))
@@ -303,11 +338,12 @@ def handle_message(event):
             pass
         return
 
-    # رد افتراضي
-    try:
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="🌙 اكتب 'مساعدة' لعرض قائمة الأوامر."))
-    except:
-        pass
+    # الرد الافتراضي
+    if not is_new_user and not is_new_group:
+        try:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="🌙 اكتب *مساعدة* لعرض قائمة الأوامر."))
+        except:
+            pass
 
 # ———————————
 # 🚀 تشغيل التطبيق
