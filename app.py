@@ -23,24 +23,18 @@ app = Flask(__name__)
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# ———————————
-# 🔹 الملفات والمحتوى
-# ———————————
+# —————————––
+# 🔹 تحميل البيانات والمحتوى
+# —————————––
+
 DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
 HELP_FILE = "help.txt"
 
 def load_data():
     if not os.path.exists(DATA_FILE):
-        return {
-            "users": [],
-            "groups": [],
-            "tasbih": {},
-            "notifications_off": [],
-            "last_morning": {},
-            "last_evening": {},
-            "last_sleep": {}
-        }
+        return {"users": [], "groups": [], "tasbih": {}, "notifications_off": [],
+                "last_morning": {}, "last_evening": {}, "last_sleep": {}}
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -50,24 +44,19 @@ def save_data():
 
 def load_content():
     if not os.path.exists(CONTENT_FILE):
-        return {
-            "duas": ["اللهم اغفر لنا"],
-            "adhkar": ["سبحان الله"],
-            "hadiths": ["حديث شريف"],
-            "quran": ["آية قرآنية"],
-            "morning": ["أذكار الصباح"],
-            "evening": ["أذكار المساء"],
-            "sleep": ["أذكار النوم"]
-        }
+        return {"duas": ["اللهم اغفر لنا"], "adhkar": ["سبحان الله"], "hadiths": ["حديث شريف"], 
+                "quran": ["آية قرآنية"], "morning": ["أذكار الصباح"], 
+                "evening": ["أذكار المساء"], "sleep": ["أذكار النوم"]}
     with open(CONTENT_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 data = load_data()
 content = load_content()
 
-# ———————————
+# —————————––
 # 🕌 وظائف البوت
-# ———————————
+# —————————––
+
 def send_message(to, text):
     """إرسال رسالة لمستخدم أو مجموعة محددة"""
     try:
@@ -81,11 +70,13 @@ def send_message(to, text):
 def send_broadcast(text):
     """إرسال رسالة لجميع المستخدمين والمجموعات (مع احترام إعدادات الإيقاف)"""
     sent_count = 0
+    # للمستخدمين
     for uid in data["users"]:
         if uid not in data["notifications_off"]:
             if send_message(uid, text):
                 sent_count += 1
-            time.sleep(0.5)
+            time.sleep(0.5)  # تجنب Rate Limit
+    # للمجموعات
     for gid in data["groups"]:
         if gid not in data["notifications_off"]:
             if send_message(gid, text):
@@ -94,15 +85,17 @@ def send_broadcast(text):
     print(f"📤 تم إرسال البث إلى {sent_count} مستلم")
     return sent_count
 
-# ———————————
+# —————————––
 # 📿 نظام التسبيح
-# ———————————
+# —————————––
+
 tasbih_phrases = ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]
 
 def handle_tasbih(user_id, text):
     """معالجة التسبيح وإرجاع الرسالة المناسبة"""
     if user_id not in data["tasbih"]:
         data["tasbih"][user_id] = {p: 0 for p in tasbih_phrases}
+
     user_tasbih = data["tasbih"][user_id]
     if text in tasbih_phrases:
         user_tasbih[text] += 1
@@ -121,9 +114,10 @@ def handle_tasbih(user_id, text):
             return f"✅ أكملت {text} مسبقًا. جرّب ذكرًا آخر."
     return None
 
-# ———————————
-# ⏰ التذكيرات اليومية
-# ———————————
+# —————————––
+# ⏰ نظام التذكير اليومي
+# —————————––
+
 def send_morning_adhkar():
     today = datetime.now().date().isoformat()
     for uid in data["users"]:
@@ -198,12 +192,14 @@ def random_reminder_scheduler():
         time.sleep(random.randint(14400, 21600))
         send_random_reminder()
 
+# تشغيل الخيوط
 threading.Thread(target=daily_scheduler, daemon=True).start()
 threading.Thread(target=random_reminder_scheduler, daemon=True).start()
 
-# ———————————
+# —————————––
 # 🧠 معالجة الرسائل
-# ———————————
+# —————————––
+
 @app.route("/", methods=["GET"])
 def home():
     return "🕌 بوت ذكرني يعمل بنجاح!", 200
@@ -225,21 +221,28 @@ def handle_message(event):
     text = event.message.text.strip()
     target_id = user_id or group_id
 
-    # تسجيل المستخدمين والمجموعات تلقائيًا
+    # 🔹 تسجيل المستخدمين والمجموعات تلقائيًا عند أول رسالة
     if user_id and user_id not in data["users"]:
         data["users"].append(user_id)
         save_data()
+        print(f"✅ تم تسجيل مستخدم جديد: {user_id}")
+
     if group_id and group_id not in data["groups"]:
         data["groups"].append(group_id)
         save_data()
+        print(f"✅ تم تسجيل مجموعة جديدة: {group_id}")
 
-    # حماية من الروابط
+    # 🔹 حماية من الروابط
     if "http://" in text or "https://" in text or "www." in text:
         try:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ يمنع إرسال الروابط هنا."))
         except:
             pass
         return
+
+    # —————————————————————————
+    # باقي أوامر البوت كما هي: مساعدة، تشغيل، إيقاف، ذكرني، تسبيح، التسبيح، الرد الافتراضي
+    # —————————————————————————
 
     # أمر: مساعدة
     if text.lower() == "مساعدة":
@@ -265,8 +268,8 @@ def handle_message(event):
 • أذكار النوم (9-12 م)
 • تذكير عشوائي كل 4-6 ساعات"""
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️ خطأ في أمر المساعدة: {e}")
         return
 
     # أمر: تشغيل
@@ -301,7 +304,7 @@ def handle_message(event):
                 pass
         return
 
-    # أمر: ذكرني (إرسال تذكير فوري للجميع)
+    # أمر: ذكرني
     if text.lower() == "ذكرني":
         category = random.choice(["duas", "adhkar", "hadiths", "quran"])
         msg = random.choice(content.get(category, ["لا يوجد محتوى"]))
@@ -312,11 +315,11 @@ def handle_message(event):
                 event.reply_token,
                 TextSendMessage(text=f"✅ تم إرسال التذكير إلى {sent_count} مستلم\n\n{msg}")
             )
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️ خطأ في الرد: {e}")
         return
 
-    # أمر: تسبيح (عرض الحالة)
+    # أمر: تسبيح
     if text.lower() == "تسبيح":
         if target_id not in data["tasbih"]:
             data["tasbih"][target_id] = {p: 0 for p in tasbih_phrases}
@@ -344,15 +347,16 @@ def handle_message(event):
             pass
         return
 
-    # رد افتراضي
+    # الرد الافتراضي
     try:
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="🌙 اكتب 'مساعدة' لعرض قائمة الأوامر."))
     except:
         pass
 
-# ———————————
+# —————————––
 # 🚀 تشغيل التطبيق
-# ———————————
+# —————————––
+
 if __name__ == "__main__":
     print(f"🚀 يعمل بوت ذكرني على المنفذ {PORT}")
     print(f"👥 عدد المستخدمين المسجلين: {len(data['users'])}")
