@@ -3,6 +3,7 @@ import json
 import random
 import threading
 import time
+import requests
 from datetime import datetime, timezone, timedelta
 from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
@@ -30,12 +31,13 @@ app = Flask(__name__)
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# ———————————
-# 🔹 تحميل البيانات والمحتوى
-# ———————————
+# ═══════════════════════════════════════════════════════════
+# تحميل وحفظ البيانات
+# ═══════════════════════════════════════════════════════════
 
 DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
+HELP_FILE = "help.txt"
 
 def load_data():
     """تحميل بيانات المستخدمين والمجموعات"""
@@ -45,6 +47,8 @@ def load_data():
             "groups": [],
             "tasbih": {},
             "notifications_off": [],
+            "user_cities": {},
+            "quran_progress": {},
             "last_morning": {},
             "last_evening": {},
             "last_sleep": {}
@@ -59,6 +63,8 @@ def load_data():
             "groups": [],
             "tasbih": {},
             "notifications_off": [],
+            "user_cities": {},
+            "quran_progress": {},
             "last_morning": {},
             "last_evening": {},
             "last_sleep": {}
@@ -72,39 +78,149 @@ def save_data():
     except Exception as e:
         print(f"⚠️ خطأ في حفظ البيانات: {e}")
 
-def load_content():
-    """تحميل محتوى الأذكار والأدعية"""
-    if not os.path.exists(CONTENT_FILE):
-        return {
-            "duas": ["اللهم اغفر لنا وارحمنا"],
-            "adhkar": ["سبحان الله وبحمده"],
-            "hadiths": ["من قال سبحان الله وبحمده مائة مرة حطت خطاياه وإن كانت مثل زبد البحر"],
-            "quran": ["بسم الله الرحمن الرحيم"],
-            "morning": ["أصبحنا وأصبح الملك لله"],
-            "evening": ["أمسينا وأمسى الملك لله"],
-            "sleep": ["باسمك اللهم أموت وأحيا"]
-        }
-    try:
-        with open(CONTENT_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except json.JSONDecodeError:
-        print("⚠️ خطأ في قراءة content.json، سيتم استخدام المحتوى الافتراضي")
-        return {
-            "duas": ["اللهم اغفر لنا وارحمنا"],
-            "adhkar": ["سبحان الله وبحمده"],
-            "hadiths": ["من قال سبحان الله وبحمده مائة مرة حطت خطاياه وإن كانت مثل زبد البحر"],
-            "quran": ["بسم الله الرحمن الرحيم"],
-            "morning": ["أصبحنا وأصبح الملك لله"],
-            "evening": ["أمسينا وأمسى الملك لله"],
-            "sleep": ["باسمك اللهم أموت وأحيا"]
-        }
-
 data = load_data()
-content = load_content()
 
-# ———————————
-# 🕌 وظائف البوت
-# ———————————
+# ═══════════════════════════════════════════════════════════
+# المحتوى الإسلامي
+# ═══════════════════════════════════════════════════════════
+
+MORNING_ATHKAR = [
+    "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ",
+    "اللَّهُمَّ بِكَ أَصْبَحْنَا، وَبِكَ أَمْسَيْنَا، وَبِكَ نَحْيَا، وَبِكَ نَمُوتُ، وَإِلَيْكَ النُّشُورُ",
+    "أَصْبَحْنَا عَلَى فِطْرَةِ الْإِسْلَامِ، وَعَلَى كَلِمَةِ الْإِخْلَاصِ، وَعَلَى دِينِ نَبِيِّنَا مُحَمَّدٍ ﷺ",
+    "سُبْحَانَ اللهِ وَبِحَمْدِهِ عَدَدَ خَلْقِهِ، وَرِضَا نَفْسِهِ، وَزِنَةَ عَرْشِهِ، وَمِدَادَ كَلِمَاتِهِ",
+    "اللَّهُمَّ إِنِّي أَصْبَحْتُ أُشْهِدُكَ أَنَّكَ أَنْتَ اللَّهُ لَا إِلَهَ إِلَّا أَنْتَ"
+]
+
+EVENING_ATHKAR = [
+    "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ",
+    "اللَّهُمَّ بِكَ أَمْسَيْنَا، وَبِكَ أَصْبَحْنَا، وَبِكَ نَحْيَا، وَبِكَ نَمُوتُ، وَإِلَيْكَ الْمَصِيرُ",
+    "أَمْسَيْنَا عَلَى فِطْرَةِ الْإِسْلَامِ، وَعَلَى كَلِمَةِ الْإِخْلَاصِ، وَعَلَى دِينِ نَبِيِّنَا مُحَمَّدٍ ﷺ",
+    "اللَّهُمَّ إِنِّي أَمْسَيْتُ أُشْهِدُكَ أَنَّكَ أَنْتَ اللَّهُ لَا إِلَهَ إِلَّا أَنْتَ"
+]
+
+SLEEP_ATHKAR = [
+    "بِاسْمِكَ اللَّهُمَّ أَمُوتُ وَأَحْيَا",
+    "اللَّهُمَّ إِنَّكَ خَلَقْتَ نَفْسِي وَأَنْتَ تَوَفَّاهَا، لَكَ مَمَاتُهَا وَمَحْيَاهَا",
+    "اللَّهُمَّ قِنِي عَذَابَكَ يَوْمَ تَبْعَثُ عِبَادَكَ",
+    "بِاسْمِكَ رَبِّي وَضَعْتُ جَنْبِي، وَبِكَ أَرْفَعُهُ، فَإِنْ أَمْسَكْتَ نَفْسِي فَارْحَمْهَا"
+]
+
+DUAS = [
+    "اللَّهُمَّ إِنِّي أَسْأَلُكَ الْعَافِيَةَ فِي الدُّنْيَا وَالْآخِرَةِ",
+    "رَبَّنَا آتِنَا فِي الدُّنْيَا حَسَنَةً وَفِي الْآخِرَةِ حَسَنَةً وَقِنَا عَذَابَ النَّارِ",
+    "اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنْ عَذَابِ جَهَنَّمَ، وَمِنْ عَذَابِ الْقَبْرِ",
+    "رَبِّ اغْفِرْ لِي وَلِوَالِدَيَّ وَلِلْمُؤْمِنِينَ يَوْمَ يَقُومُ الْحِسَابُ"
+]
+
+HADITHS = [
+    "مَنْ قَالَ: سُبْحَانَ اللَّهِ وَبِحَمْدِهِ، فِي يَوْمٍ مِائَةَ مَرَّةٍ، حُطَّتْ خَطَايَاهُ",
+    "الْمُؤْمِنُ الْقَوِيُّ خَيْرٌ وَأَحَبُّ إِلَى اللَّهِ مِنَ الْمُؤْمِنِ الضَّعِيفِ",
+    "أَحَبُّ الْأَعْمَالِ إِلَى اللَّهِ أَدْوَمُهَا وَإِنْ قَلَّ",
+    "الطُّهُورُ شَطْرُ الْإِيمَانِ، وَالْحَمْدُ لِلَّهِ تَمْلَأُ الْمِيزَانَ"
+]
+
+QURAN_VERSES = [
+    "إِنَّ مَعَ الْعُسْرِ يُسْرًا",
+    "فَاذْكُرُونِي أَذْكُرْكُمْ وَاشْكُرُوا لِي وَلَا تَكْفُرُونِ",
+    "وَمَا خَلَقْتُ الْجِنَّ وَالْإِنسَ إِلَّا لِيَعْبُدُونِ",
+    "وَلَا تَيْأَسُوا مِن رَّوْحِ اللَّهِ"
+]
+
+# ═══════════════════════════════════════════════════════════
+# 🕌 نظام أوقات الصلاة
+# ═══════════════════════════════════════════════════════════
+
+def get_prayer_times(city="Riyadh"):
+    """الحصول على أوقات الصلاة"""
+    try:
+        today = get_current_time().strftime("%d-%m-%Y")
+        url = f"http://api.aladhan.com/v1/timingsByCity/{today}?city={city}&country=Saudi%20Arabia&method=4"
+        response = requests.get(url, timeout=10)
+        data_response = response.json()
+        if data_response["code"] == 200:
+            timings = data_response["data"]["timings"]
+            return {
+                "الفجر": timings["Fajr"],
+                "الظهر": timings["Dhuhr"],
+                "العصر": timings["Asr"],
+                "المغرب": timings["Maghrib"],
+                "العشاء": timings["Isha"]
+            }
+    except Exception as e:
+        print(f"⚠️ خطأ في الحصول على أوقات الصلاة: {e}")
+    return None
+
+def check_prayer_times():
+    """التحقق من أوقات الصلاة وإرسال التنبيهات"""
+    print("🕌 بدأ نظام تنبيهات أوقات الصلاة")
+    while True:
+        try:
+            now = get_current_time()
+            current_time = now.strftime("%H:%M")
+            
+            for user_id, city in list(data["user_cities"].items()):
+                if user_id in data["notifications_off"]:
+                    continue
+                
+                prayer_times = get_prayer_times(city)
+                if not prayer_times:
+                    continue
+                
+                for prayer, time_str in prayer_times.items():
+                    try:
+                        prayer_time = datetime.strptime(time_str, "%H:%M")
+                        alert_time = (prayer_time - timedelta(minutes=10)).strftime("%H:%M")
+                        
+                        if current_time == alert_time:
+                            message = f"🕌 حان وقت صلاة {prayer}\n⏰ بعد 10 دقائق: {time_str}\n\nاللَّهُمَّ إِنِّي أَسْأَلُكَ الْفِرْدَوْسَ الْأَعْلَى"
+                            try:
+                                line_bot_api.push_message(user_id, TextSendMessage(text=message))
+                            except:
+                                pass
+                    except:
+                        pass
+            
+            time.sleep(60)
+        except Exception as e:
+            print(f"⚠️ خطأ في التحقق من أوقات الصلاة: {e}")
+            time.sleep(60)
+
+threading.Thread(target=check_prayer_times, daemon=True).start()
+
+# ═══════════════════════════════════════════════════════════
+# 📖 نظام قراءة القرآن
+# ═══════════════════════════════════════════════════════════
+
+def get_daily_quran_verse():
+    """الحصول على آية قرآنية عشوائية"""
+    try:
+        url = "https://api.alquran.cloud/v1/ayah/random/ar.alafasy"
+        response = requests.get(url, timeout=10)
+        data_response = response.json()
+        if data_response["code"] == 200:
+            ayah_data = data_response["data"]
+            text = ayah_data["text"]
+            surah_name = ayah_data["surah"]["name"]
+            number = ayah_data["numberInSurah"]
+            return f"📖 {text}\n\n﴿ {surah_name} - آية {number} ﴾"
+    except:
+        pass
+    return f"📖 {random.choice(QURAN_VERSES)}"
+
+def init_quran_progress(user_id):
+    """تهيئة تقدم قراءة القرآن"""
+    if user_id not in data["quran_progress"]:
+        data["quran_progress"][user_id] = {
+            "current_juz": 1,
+            "completed_juz": [],
+            "last_read": None
+        }
+        save_data()
+
+# ═══════════════════════════════════════════════════════════
+# 🌙 التذكير التلقائي
+# ═══════════════════════════════════════════════════════════
 
 def send_message(to, text):
     """إرسال رسالة لمستخدم أو مجموعة محددة"""
@@ -115,158 +231,94 @@ def send_message(to, text):
         print(f"⚠️ خطأ في الإرسال إلى {to}: {e}")
         return False
 
-def send_broadcast(text):
-    """إرسال رسالة لجميع المستخدمين والمجموعات (مع احترام إعدادات الإيقاف)"""
-    success_count = 0
-    fail_count = 0
-    
-    for uid in data["users"]:
-        if uid not in data["notifications_off"]:
-            if send_message(uid, text):
-                success_count += 1
-            else:
-                fail_count += 1
-            time.sleep(0.5)
-    
-    for gid in data["groups"]:
-        if gid not in data["notifications_off"]:
-            if send_message(gid, text):
-                success_count += 1
-            else:
-                fail_count += 1
-            time.sleep(0.5)
-    
-    print(f"✅ تم الإرسال إلى {success_count} متلقي، فشل {fail_count}")
-    return success_count, fail_count
-
-def send_welcome_message(target_id, is_group=False):
-    """إرسال رسالة ترحيبية للمستخدمين أو المجموعات الجدد"""
-    welcome_text = """🌙 السلام عليكم ورحمة الله وبركاته
-
-✨ مرحبًا بك في بوت *ذكّرني*
-
-📿 سيساعدك هذا البوت على:
-• تذكّر أذكار الصباح والمساء والنوم
-• متابعة التسبيح اليومي
-• الحصول على أدعية وآيات قرآنية
-
-🔹 اكتب *مساعدة* لعرض قائمة الأوامر
-
-🤲 جزاك الله خيرًا"""
-    
-    try:
-        send_message(target_id, welcome_text)
-        return True
-    except Exception as e:
-        print(f"⚠️ خطأ في إرسال رسالة الترحيب: {e}")
-        return False
-
-# ———————————
-# 📿 نظام التسبيح
-# ———————————
-
-tasbih_phrases = ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]
-
-def handle_tasbih(user_id, text):
-    """معالجة عدّاد التسبيح"""
-    if user_id not in data["tasbih"]:
-        data["tasbih"][user_id] = {p: 0 for p in tasbih_phrases}
-
-    user_tasbih = data["tasbih"][user_id]
-    
-    if text in tasbih_phrases:
-        user_tasbih[text] += 1
-        save_data()
-        count = user_tasbih[text]
-        
-        if count < 33:
-            return f"📿 {text} ({count}/33)"
-        elif count == 33:
-            msg = f"🎉 أحسنت! أكملت 33 مرة من '{text}'!"
-            if all(v >= 33 for v in user_tasbih.values()):
-                msg += "\n\n🌙 *تهانينا!* أكملت جميع الأذكار الأربعة.\nجزاك الله خيرًا ❤️"
-                # إعادة تعيين العدّاد
-                data["tasbih"][user_id] = {p: 0 for p in tasbih_phrases}
-                save_data()
-            return msg
-        else:
-            return f"✅ أكملت {text} مسبقًا ({count}/33). جرّب ذكرًا آخر."
-    
-    return None
-
-# ———————————
-# ⏰ نظام التذكير اليومي
-# ———————————
-
-def send_morning_adhkar():
+def send_morning_athkar():
     """إرسال أذكار الصباح"""
+    print("🌅 إرسال أذكار الصباح")
     today = get_current_time().date().isoformat()
     
     for uid in data["users"]:
         if uid not in data["notifications_off"] and data["last_morning"].get(uid) != today:
-            msg = random.choice(content.get("morning", ["أذكار الصباح"]))
-            send_message(uid, f"🌅 *أذكار الصباح*\n\n{msg}")
+            message = f"☀️ صباح الخير\nأذكار الصباح:\n\n{random.choice(MORNING_ATHKAR)}"
+            send_message(uid, message)
             data["last_morning"][uid] = today
             time.sleep(0.5)
     
     for gid in data["groups"]:
         if gid not in data["notifications_off"] and data["last_morning"].get(gid) != today:
-            msg = random.choice(content.get("morning", ["أذكار الصباح"]))
-            send_message(gid, f"🌅 *أذكار الصباح*\n\n{msg}")
+            message = f"☀️ صباح الخير\nأذكار الصباح:\n\n{random.choice(MORNING_ATHKAR)}"
+            send_message(gid, message)
             data["last_morning"][gid] = today
             time.sleep(0.5)
     
     save_data()
-    print(f"✅ تم إرسال أذكار الصباح - {today}")
 
-def send_evening_adhkar():
+def send_evening_athkar():
     """إرسال أذكار المساء"""
+    print("🌇 إرسال أذكار المساء")
     today = get_current_time().date().isoformat()
     
     for uid in data["users"]:
         if uid not in data["notifications_off"] and data["last_evening"].get(uid) != today:
-            msg = random.choice(content.get("evening", ["أذكار المساء"]))
-            send_message(uid, f"🌇 *أذكار المساء*\n\n{msg}")
+            message = f"🌙 مساء الخير\nأذكار المساء:\n\n{random.choice(EVENING_ATHKAR)}"
+            send_message(uid, message)
             data["last_evening"][uid] = today
             time.sleep(0.5)
     
     for gid in data["groups"]:
         if gid not in data["notifications_off"] and data["last_evening"].get(gid) != today:
-            msg = random.choice(content.get("evening", ["أذكار المساء"]))
-            send_message(gid, f"🌇 *أذكار المساء*\n\n{msg}")
+            message = f"🌙 مساء الخير\nأذكار المساء:\n\n{random.choice(EVENING_ATHKAR)}"
+            send_message(gid, message)
             data["last_evening"][gid] = today
             time.sleep(0.5)
     
     save_data()
-    print(f"✅ تم إرسال أذكار المساء - {today}")
 
-def send_sleep_adhkar():
+def send_sleep_athkar():
     """إرسال أذكار النوم"""
+    print("😴 إرسال أذكار النوم")
     today = get_current_time().date().isoformat()
     
     for uid in data["users"]:
         if uid not in data["notifications_off"] and data["last_sleep"].get(uid) != today:
-            msg = random.choice(content.get("sleep", ["أذكار النوم"]))
-            send_message(uid, f"🌙 *أذكار النوم*\n\n{msg}")
+            message = f"😴 أذكار النوم:\n\n{random.choice(SLEEP_ATHKAR)}"
+            send_message(uid, message)
             data["last_sleep"][uid] = today
             time.sleep(0.5)
     
     for gid in data["groups"]:
         if gid not in data["notifications_off"] and data["last_sleep"].get(gid) != today:
-            msg = random.choice(content.get("sleep", ["أذكار النوم"]))
-            send_message(gid, f"🌙 *أذكار النوم*\n\n{msg}")
+            message = f"😴 أذكار النوم:\n\n{random.choice(SLEEP_ATHKAR)}"
+            send_message(gid, message)
             data["last_sleep"][gid] = today
             time.sleep(0.5)
     
     save_data()
-    print(f"✅ تم إرسال أذكار النوم - {today}")
 
 def send_random_reminder():
     """إرسال تذكير عشوائي"""
-    category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-    msg = random.choice(content.get(category, ["لا يوجد محتوى"]))
-    send_broadcast(msg)
-    print(f"✅ تم إرسال تذكير عشوائي من فئة: {category}")
+    content_type = random.choice(["duas", "hadiths", "quran"])
+    
+    if content_type == "duas":
+        message = f"🤲 {random.choice(DUAS)}"
+    elif content_type == "hadiths":
+        message = f"📿 {random.choice(HADITHS)}"
+    else:
+        message = f"📖 {random.choice(QURAN_VERSES)}"
+    
+    timestamp = get_current_time().strftime("%H:%M")
+    full_message = f"{message}\n\n⏰ {timestamp}"
+    
+    for uid in data["users"]:
+        if uid not in data["notifications_off"]:
+            send_message(uid, full_message)
+            time.sleep(0.5)
+    
+    for gid in data["groups"]:
+        if gid not in data["notifications_off"]:
+            send_message(gid, full_message)
+            time.sleep(0.5)
+    
+    print(f"✅ تم إرسال تذكير عشوائي: {content_type}")
 
 def daily_scheduler():
     """جدولة التذكيرات اليومية"""
@@ -280,22 +332,22 @@ def daily_scheduler():
             now = get_current_time()
             hour = now.hour
             
-            # أذكار الصباح (6-10 صباحًا) - مرة واحدة فقط
+            # أذكار الصباح (6-10 صباحًا)
             if 6 <= hour < 10 and last_morning_hour != hour:
-                send_morning_adhkar()
+                send_morning_athkar()
                 last_morning_hour = hour
             
-            # أذكار المساء (4-7 مساءً) - مرة واحدة فقط
+            # أذكار المساء (4-7 مساءً)
             elif 16 <= hour < 19 and last_evening_hour != hour:
-                send_evening_adhkar()
+                send_evening_athkar()
                 last_evening_hour = hour
             
-            # أذكار النوم (9-12 ليلاً) - مرة واحدة فقط
+            # أذكار النوم (9-12 ليلاً)
             elif 21 <= hour < 24 and last_sleep_hour != hour:
-                send_sleep_adhkar()
+                send_sleep_athkar()
                 last_sleep_hour = hour
             
-            # إعادة تعيين العدادات في بداية اليوم الجديد
+            # إعادة تعيين العدادات في بداية اليوم
             if hour == 0:
                 last_morning_hour = -1
                 last_evening_hour = -1
@@ -307,7 +359,7 @@ def daily_scheduler():
             print(f"⚠️ خطأ في جدول التذكيرات: {e}")
             time.sleep(3600)
 
-def random_reminder_scheduler():
+def scheduled_random_messages():
     """جدولة التذكيرات العشوائية"""
     print("🔀 بدأ جدول التذكيرات العشوائية")
     while True:
@@ -321,23 +373,49 @@ def random_reminder_scheduler():
 
 # تشغيل الجداول
 threading.Thread(target=daily_scheduler, daemon=True).start()
-threading.Thread(target=random_reminder_scheduler, daemon=True).start()
+threading.Thread(target=scheduled_random_messages, daemon=True).start()
 
-# ———————————
-# 🧠 معالجة الرسائل
-# ———————————
+# ═══════════════════════════════════════════════════════════
+# 📿 نظام التسبيح
+# ═══════════════════════════════════════════════════════════
+
+TASBIH_LIMIT = 33
+TASBIH_TYPES = ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]
+
+def ensure_user_counts(uid):
+    """التأكد من وجود عداد للمستخدم"""
+    if uid not in data["tasbih"]:
+        data["tasbih"][uid] = {t: 0 for t in TASBIH_TYPES}
+
+def reset_tasbih(uid):
+    """إعادة تعيين عداد التسبيح"""
+    data["tasbih"][uid] = {t: 0 for t in TASBIH_TYPES}
+    save_data()
+
+def get_tasbih_progress(uid):
+    """الحصول على تقدم التسبيح"""
+    counts = data["tasbih"][uid]
+    lines = []
+    for t in TASBIH_TYPES:
+        count = counts[t]
+        percentage = (count / TASBIH_LIMIT) * 100
+        filled = int(percentage / 10)
+        bar = "▓" * filled + "░" * (10 - filled)
+        lines.append(f"{t}\n{count}/33  {bar}")
+    return "\n\n".join(lines)
+
+# ═══════════════════════════════════════════════════════════
+# Routes
+# ═══════════════════════════════════════════════════════════
 
 @app.route("/", methods=["GET"])
 def home():
-    """صفحة رئيسية للتأكد من عمل البوت"""
-    return "🕌 بوت ذكرني يعمل بنجاح!", 200
+    return "🕌 بوت ذكرني يعمل بنجاح ✅", 200
 
 @app.route("/callback", methods=["POST"])
 def callback():
-    """معالجة webhook من LINE"""
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
-    
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
@@ -346,202 +424,327 @@ def callback():
     except Exception as e:
         print(f"⚠️ خطأ في معالجة الطلب: {e}")
         return "Error", 500
-    
-    return "OK"
+    return "OK", 200
+
+# ═══════════════════════════════════════════════════════════
+# معالج الرسائل
+# ═══════════════════════════════════════════════════════════
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    """معالجة الرسائل النصية"""
-    user_id = getattr(event.source, "user_id", None)
-    group_id = getattr(event.source, "group_id", None)
-    text = event.message.text.strip()
-    target_id = user_id or group_id
+    try:
+        user_text = event.message.text.strip()
+        user_id = getattr(event.source, "user_id", None)
+        group_id = getattr(event.source, "group_id", None)
+        target_id = user_id or group_id
+        
+        # ════════════════════════════════════════════════
+        # تسجيل المستخدمين والمجموعات تلقائياً
+        # ════════════════════════════════════════════════
+        is_new = False
+        
+        if user_id and user_id not in data["users"]:
+            data["users"].append(user_id)
+            is_new = True
+            save_data()
+            print(f"✅ مستخدم جديد: {user_id}")
+        
+        if group_id and group_id not in data["groups"]:
+            data["groups"].append(group_id)
+            is_new = True
+            save_data()
+            print(f"✅ مجموعة جديدة: {group_id}")
+        
+        ensure_user_counts(target_id)
+        init_quran_progress(target_id)
+        
+        # ════════════════════════════════════════════════
+        # أمر: مساعدة
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["مساعدة", "help"]:
+            help_text = """🌙 أوامر البوت الإسلامي
 
-    # تسجيل المستخدمين والمجموعات مع إرسال رسالة ترحيبية
-    is_new_user = False
-    is_new_group = False
+📿 التسبيح:
+• سبحان الله / الحمد لله / الله أكبر / استغفر الله
+• تسبيح - عرض التقدم
+• إعادة - إعادة العداد
 
-    if user_id and user_id not in data["users"]:
-        data["users"].append(user_id)
-        is_new_user = True
-        save_data()
-        send_welcome_message(user_id, is_group=False)
-        print(f"✅ مستخدم جديد: {user_id}")
+🕌 أوقات الصلاة:
+• مدينتي [اسم المدينة]
+• أوقات الصلاة
 
-    if group_id and group_id not in data["groups"]:
-        data["groups"].append(group_id)
-        is_new_group = True
-        save_data()
-        send_welcome_message(group_id, is_group=True)
-        print(f"✅ مجموعة جديدة: {group_id}")
+📖 القرآن:
+• آية - آية قرآنية
+• ختمتي - تقدم القراءة
+• قرأت جزء [رقم]
 
-    # حماية من الروابط
-    if any(keyword in text for keyword in ["http://", "https://", "www."]):
-        try:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text="⚠️ يمنع إرسال الروابط هنا.")
-            )
-        except:
-            pass
-        return
+🌙 الأذكار:
+• أذكار الصباح
+• أذكار المساء
+• أذكار النوم
 
-    # أمر: مساعدة
-    if text.lower() == "مساعدة":
-        help_text = """╔═══════════════════╗
-║  📖 أوامر بوت ذكرني  ║
-╚═══════════════════╝
+📨 التذكير:
+• ذكرني - ذكر فوري
+• دعاء - دعاء عشوائي
+• حديث - حديث شريف
+• إيقاف - إيقاف التذكير
+• تشغيل - تشغيل التذكير
 
-┌─ التذكيرات ─┐
-│ 🔔 ذكرني
-│ → إرسال تذكير فوري لجميع المستخدمين
-│    (دعاء، ذكر، حديث، أو آية)
-│
-│ ⏰ تشغيل
-│ → تفعيل التذكيرات التلقائية
-│
-│ ⏸️ إيقاف
-│ → إيقاف التذكيرات التلقائية
-└──────────────┘
+━━━━━━━━━━━━━━━━━
+جزاك الله خيراً 🖤"""
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
+            return
+        
+        # ════════════════════════════════════════════════
+        # تسجيل المدينة
+        # ════════════════════════════════════════════════
+        if user_text.lower().startswith("مدينتي"):
+            city = user_text.replace("مدينتي", "").strip()
+            if city:
+                data["user_cities"][user_id] = city
+                save_data()
+                line_bot_api.reply_message(event.reply_token, 
+                    TextSendMessage(text=f"✅ تم تسجيل مدينتك: {city}\nستصلك تنبيهات الصلاة قبل 10 دقائق"))
+            return
+        
+        # ════════════════════════════════════════════════
+        # أوقات الصلاة
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["أوقات الصلاة", "الصلاة", "مواقيت"]:
+            city = data["user_cities"].get(user_id, "Riyadh")
+            prayer_times = get_prayer_times(city)
+            if prayer_times:
+                msg = f"🕌 أوقات الصلاة في {city}\n\n"
+                for prayer, time in prayer_times.items():
+                    msg += f"{prayer}: {time}\n"
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
+            else:
+                line_bot_api.reply_message(event.reply_token, 
+                    TextSendMessage(text="⚠️ عذراً، لم نستطع الحصول على أوقات الصلاة"))
+            return
+        
+        # ════════════════════════════════════════════════
+        # آية قرآنية
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["آية", "قرآن", "اية"]:
+            verse = get_daily_quran_verse()
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=verse))
+            return
+        
+        # ════════════════════════════════════════════════
+        # تقدم القراءة
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["ختمتي", "القراءة", "تقدمي"]:
+            progress = data["quran_progress"][target_id]
+            completed = len(progress["completed_juz"])
+            msg = f"📖 تقدم قراءة القرآن\n\nالجزء الحالي: {progress['current_juz']}\nالأجزاء المكتملة: {completed}/30"
+            if completed == 30:
+                msg += "\n\n🎉 ماشاء الله! أتممت ختمة كاملة!\nبارك الله فيك 💚"
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
+            return
+        
+        # ════════════════════════════════════════════════
+        # تسجيل قراءة جزء
+        # ════════════════════════════════════════════════
+        if user_text.lower().startswith("قرأت جزء"):
+            try:
+                juz_num = int(user_text.split()[-1])
+                if 1 <= juz_num <= 30:
+                    if juz_num not in data["quran_progress"][target_id]["completed_juz"]:
+                        data["quran_progress"][target_id]["completed_juz"].append(juz_num)
+                        data["quran_progress"][target_id]["current_juz"] = min(juz_num + 1, 30)
+                        save_data()
+                        line_bot_api.reply_message(event.reply_token, 
+                            TextSendMessage(text=f"✨ ماشاء الله!\nتم تسجيل الجزء {juz_num}\nبارك الله فيك 💚"))
+                    else:
+                        line_bot_api.reply_message(event.reply_token, 
+                            TextSendMessage(text=f"✅ الجزء {juz_num} مسجل مسبقاً"))
+            except:
+                pass
+            return
+        
+        # ════════════════════════════════════════════════
+        # أذكار الصباح
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["أذكار الصباح", "اذكار الصباح", "الصباح"]:
+            msg = "☀️ أذكار الصباح\n\n" + "\n\n━━━━━━━━━━━\n\n".join(MORNING_ATHKAR[:3])
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
+            return
+        
+        # ════════════════════════════════════════════════
+        # أذكار المساء
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["أذكار المساء", "اذكار المساء", "المساء"]:
+            msg = "🌙 أذكار المساء\n\n" + "\n\n━━━━━━━━━━━\n\n".join(EVENING_ATHKAR[:3])
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
+            return
+        
+        # ════════════════════════════════════════════════
+        # أذكار النوم
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["أذكار النوم", "اذكار النوم", "النوم"]:
+            msg = "😴 أذكار النوم\n\n" + "\n\n━━━━━━━━━━━\n\n".join(SLEEP_ATHKAR[:3])
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
+            return
+        
+        # ════════════════════════════════════════════════
+        # دعاء
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["دعاء", "ادعية"]:
+            msg = f"🤲 {random.choice(DUAS)}"
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
+            return
+        
+        # ════════════════════════════════════════════════
+        # حديث
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["حديث", "احاديث"]:
+            msg = f"📿 {random.choice(HADITHS)}"
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
+            return
+        
+        # ════════════════════════════════════════════════
+        # عرض التسبيح
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["تسبيح", "عداد"]:
+            progress_text = get_tasbih_progress(target_id)
+            line_bot_api.reply_message(event.reply_token, 
+                TextSendMessage(text=f"📿 تقدم التسبيح\n\n{progress_text}"))
+            return
+        
+        # ════════════════════════════════════════════════
+        # إعادة التسبيح
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["إعادة", "reset", "اعادة"]:
+            reset_tasbih(target_id)
+            line_bot_api.reply_message(event.reply_token, 
+                TextSendMessage(text="✅ تم إعادة تعيين عداد التسبيح"))
+            return
+        
+        # ════════════════════════════════════════════════
+        # التسبيح
+        # ════════════════════════════════════════════════
+        clean_text = user_text.replace(" ", "")
+        key_map = {
+            "سبحانالله": "سبحان الله",
+            "الحمدلله": "الحمد لله",
+            "اللهأكبر": "الله أكبر",
+            "استغفرالله": "استغفر الله"
+        }
+        
+        key = key_map.get(clean_text)
+        if key:
+            if data["tasbih"][target_id][key] < TASBIH_LIMIT:
+                data["tasbih"][target_id][key] += 1
+                save_data()
+            
+            if data["tasbih"][target_id][key] == TASBIH_LIMIT:
+                line_bot_api.push_message(target_id, 
+                    TextSendMessage(text=f"✨ ماشاء الله!\nاكتملت {key} 33 مرة! 🎉"))
+            
+            progress_text = get_tasbih_progress(target_id)
+            line_bot_api.reply_message(event.reply_token, 
+                TextSendMessage(text=f"📿 {progress_text}"))
+            
+            counts = data["tasbih"][target_id]
+            if all(counts[k] >= TASBIH_LIMIT for k in TASBIH_TYPES):
+                line_bot_api.push_message(target_id, 
+                    TextSendMessage(text="🎉 مبروك! اكتملت كل الأذكار!\n\nجزاك الله خيراً\nوجعل الله لك ولوالديك الجنة 💚"))
+            return
+        
+        # ════════════════════════════════════════════════
+        # ذكرني - إرسال لجميع المستخدمين
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["ذكرني", "تذكير", "ذكر"]:
+            content_type = random.choice(["duas", "hadiths", "quran"])
+            if content_type == "duas":
+                message = f"🤲 {random.choice(DUAS)}"
+            elif content_type == "hadiths":
+                message = f"📿 {random.choice(HADITHS)}"
+            else:
+                message = f"📖 {random.choice(QURAN_VERSES)}"
+            
+            timestamp = get_current_time().strftime("%H:%M")
+            full_message = f"{message}\n\n⏰ {timestamp}"
+            
+            # إرسال للجميع
+            success_count = 0
+            for uid in data["users"]:
+                if uid not in data["notifications_off"]:
+                    if send_message(uid, full_message):
+                        success_count += 1
+                    time.sleep(0.5)
+            
+            for gid in data["groups"]:
+                if gid not in data["notifications_off"]:
+                    if send_message(gid, full_message):
+                        success_count += 1
+                    time.sleep(0.5)
+            
+            # تأكيد للمرسل
+            line_bot_api.reply_message(event.reply_token, 
+                TextSendMessage(text=f"📣 تم إرسال التذكير\n\n{message}\n\n✅ وصل إلى {success_count} متلقي"))
+            return
+        
+        # ════════════════════════════════════════════════
+        # إيقاف
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["إيقاف", "stop", "ايقاف"]:
+            if target_id not in data["notifications_off"]:
+                data["notifications_off"].append(target_id)
+                save_data()
+            line_bot_api.reply_message(event.reply_token, 
+                TextSendMessage(text="⏸️ تم إيقاف التذكير التلقائي\n\nلتشغيله اكتب: تشغيل"))
+            return
+        
+        # ════════════════════════════════════════════════
+        # تشغيل
+        # ════════════════════════════════════════════════
+        if user_text.lower() in ["تشغيل", "start", "بدء"]:
+            if target_id in data["notifications_off"]:
+                data["notifications_off"].remove(target_id)
+                save_data()
+            line_bot_api.reply_message(event.reply_token, 
+                TextSendMessage(text="✅ تم تشغيل التذكير التلقائي 🌙"))
+            return
+        
+        # ════════════════════════════════════════════════
+        # رد افتراضي للمستخدمين الجدد
+        # ════════════════════════════════════════════════
+        if is_new:
+            welcome_text = """🌙 السلام عليكم ورحمة الله وبركاته
 
-┌─ التسبيح ─┐
-│ 📿 تسبيح
-│ → عرض عداد التسبيح الخاص بك
-│
-│ اكتب أحد الأذكار التالية:
-│ • سبحان الله (0/33)
-│ • الحمد لله (0/33)
-│ • الله أكبر (0/33)
-│ • استغفر الله (0/33)
-│
-│ 🎯 الهدف: إكمال 33 مرة لكل ذكر
-└──────────────┘
+✨ مرحبًا بك في بوت *ذكّرني*
 
-┌─ التذكيرات التلقائية ─┐
-│ 🌅 أذكار الصباح → 06:00 - 10:00
-│ 🌇 أذكار المساء → 16:00 - 19:00
-│ 🌙 أذكار النوم → 21:00 - 00:00
-│ 🔀 تذكير عشوائي → كل 4-6 ساعات
-└──────────────┘
+📿 سيساعدك هذا البوت على:
+• تذكّر أذكار الصباح والمساء والنوم
+• متابعة التسبيح اليومي
+• الحصول على أدعية وآيات قرآنية
+• تنبيهات أوقات الصلاة
+• متابعة قراءة القرآن
 
-💡 نصيحة: استخدم "ذكرني" لنشر تذكير
-    لجميع أعضاء المجموعة فورًا!
+🔹 اكتب *مساعدة* لعرض قائمة الأوامر
 
 🤲 جزاك الله خيرًا"""
-        
-        try:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=help_text)
-            )
-        except:
-            pass
-        return
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=welcome_text))
+    
+    except Exception as e:
+        print(f"⚠️ خطأ في معالجة الرسالة: {e}")
 
-    # أمر: تشغيل
-    if text.lower() == "تشغيل":
-        if target_id in data["notifications_off"]:
-            data["notifications_off"].remove(target_id)
-            save_data()
-        try:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text="✅ تم تفعيل التذكيرات التلقائية")
-            )
-        except:
-            pass
-        return
-
-    # أمر: إيقاف
-    if text.lower() == "إيقاف":
-        if target_id not in data["notifications_off"]:
-            data["notifications_off"].append(target_id)
-            save_data()
-        try:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text="⏸️ تم إيقاف التذكيرات التلقائية")
-            )
-        except:
-            pass
-        return
-
-    # أمر: ذكرني (إرسال تذكير فوري لجميع المستخدمين)
-    if text.lower() == "ذكرني":
-        category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-        msg = random.choice(content.get(category, ["لا يوجد محتوى"]))
-        
-        # إرسال للجميع
-        success, fail = send_broadcast(msg)
-        
-        try:
-            # تأكيد للمرسل
-            confirmation = f"📣 *تم إرسال التذكير*\n\n{msg}\n\n✅ وصل إلى {success} متلقي"
-            if fail > 0:
-                confirmation += f"\n⚠️ فشل الإرسال لـ {fail}"
-            
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=confirmation)
-            )
-        except Exception as e:
-            print(f"⚠️ خطأ عند إرسال التأكيد: {e}")
-        return
-
-    # أمر: تسبيح
-    if text.lower() == "تسبيح":
-        if target_id not in data["tasbih"]:
-            data["tasbih"][target_id] = {p: 0 for p in tasbih_phrases}
-            save_data()
-        
-        counts = data["tasbih"][target_id]
-        status = (
-            f"📿 *عداد التسبيح*\n\n"
-            f"سبحان الله: {counts['سبحان الله']}/33\n"
-            f"الحمد لله: {counts['الحمد لله']}/33\n"
-            f"الله أكبر: {counts['الله أكبر']}/33\n"
-            f"استغفر الله: {counts['استغفر الله']}/33"
-        )
-        
-        try:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=status)
-            )
-        except:
-            pass
-        return
-
-    # معالجة التسبيح
-    tasbih_result = handle_tasbih(target_id, text)
-    if tasbih_result:
-        try:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=tasbih_result)
-            )
-        except:
-            pass
-        return
-
-    # رد افتراضي
-    if not is_new_user and not is_new_group:
-        try:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text="🌙 اكتب *مساعدة* لعرض قائمة الأوامر.")
-            )
-        except:
-            pass
-
-# ———————————
-# 🚀 تشغيل التطبيق
-# ———————————
+# ═══════════════════════════════════════════════════════════
+# تشغيل التطبيق
+# ═══════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    print(f"🚀 يعمل بوت ذكرني على المنفذ {PORT}")
+    print("╔═══════════════════════════════╗")
+    print("║   🕌 بوت ذكرني الإسلامي   ║")
+    print("╚═══════════════════════════════╝")
+    print(f"🚀 المنفذ: {PORT}")
     print(f"🕐 التوقيت: UTC+3 (السعودية)")
     print(f"⏰ الوقت الحالي: {get_current_time().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"📊 عدد المستخدمين: {len(data['users'])}")
-    print(f"👥 عدد المجموعات: {len(data['groups'])}")
-    app.run(host="0.0.0.0", port=PORT)
+    print(f"👥 المستخدمين: {len(data['users'])}")
+    print(f"👥 المجموعات: {len(data['groups'])}")
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    print("✅ البوت يعمل الآن...")
+    print("📝 ملاحظة: يتم تسجيل المستخدمين تلقائياً بعد أول رسالة")
+    app.run(host="0.0.0.0", port=PORT, debug=False)
