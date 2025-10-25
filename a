@@ -1,0 +1,515 @@
+from flask import Flask, request
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
+import os, random, json, threading, time
+from datetime import datetime
+from dotenv import load_dotenv
+
+# ═══════════════════════════════════════════════════════════
+
+# إعداد البوت والمتغيرات الأساسية
+
+# ═══════════════════════════════════════════════════════════
+
+load_dotenv()
+app = Flask(**name**)
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv(“LINE_CHANNEL_ACCESS_TOKEN”)
+LINE_CHANNEL_SECRET = os.getenv(“LINE_CHANNEL_SECRET”)
+PORT = int(os.getenv(“PORT”, 5000))
+
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
+# ═══════════════════════════════════════════════════════════
+
+# ملفات البيانات
+
+# ═══════════════════════════════════════════════════════════
+
+DATA_FILE = “data.json”
+CONTENT_FILE = “content.json”
+STATS_FILE = “stats.json”
+
+# ═══════════════════════════════════════════════════════════
+
+# دوال تحميل وحفظ البيانات
+
+# ═══════════════════════════════════════════════════════════
+
+def load_data():
+“”“تحميل بيانات المستخدمين والمجموعات”””
+if not os.path.exists(DATA_FILE):
+initial_data = {
+“users”: [],
+“groups”: [],
+“tasbih”: {},
+“notifications_off”: [],
+“user_preferences”: {}  # ✨ جديد: تفضيلات المستخدمين
+}
+with open(DATA_FILE, “w”, encoding=“utf-8”) as f:
+json.dump(initial_data, f, ensure_ascii=False, indent=2)
+return set(), set(), {}, set(), {}
+
+```
+with open(DATA_FILE, "r", encoding="utf-8") as f:
+    data = json.load(f)
+    return (
+        set(data.get("users", [])),
+        set(data.get("groups", [])),
+        data.get("tasbih", {}),
+        set(data.get("notifications_off", [])),
+        data.get("user_preferences", {})
+    )
+```
+
+def save_data():
+“”“حفظ بيانات المستخدمين والمجموعات”””
+with open(DATA_FILE, “w”, encoding=“utf-8”) as f:
+json.dump({
+“users”: list(target_users),
+“groups”: list(target_groups),
+“tasbih”: tasbih_counts,
+“notifications_off”: list(notifications_off),
+“user_preferences”: user_preferences
+}, f, ensure_ascii=False, indent=2)
+
+def load_stats():
+“”“تحميل إحصائيات البوت”””
+if not os.path.exists(STATS_FILE):
+return {“total_messages”: 0, “total_reminders”: 0, “daily_active_users”: {}}
+with open(STATS_FILE, “r”, encoding=“utf-8”) as f:
+return json.load(f)
+
+def save_stats():
+“”“حفظ إحصائيات البوت”””
+with open(STATS_FILE, “w”, encoding=“utf-8”) as f:
+json.dump(bot_stats, f, ensure_ascii=False, indent=2)
+
+# تحميل البيانات
+
+target_users, target_groups, tasbih_counts, notifications_off, user_preferences = load_data()
+bot_stats = load_stats()
+
+# ═══════════════════════════════════════════════════════════
+
+# تحميل المحتوى الإسلامي
+
+# ═══════════════════════════════════════════════════════════
+
+with open(CONTENT_FILE, “r”, encoding=“utf-8”) as f:
+content = json.load(f)
+
+# ═══════════════════════════════════════════════════════════
+
+# إرسال الرسائل التلقائية (مُحسّن)
+
+# ═══════════════════════════════════════════════════════════
+
+def send_random_message_to_all():
+“”“إرسال ذكر/دعاء عشوائي لجميع المستخدمين والمجموعات (مع احترام الإيقاف)”””
+category = random.choice([“duas”, “adhkar”, “hadiths”, “quran”])
+message = random.choice(content.get(category, [“لا يوجد محتوى”]))
+
+```
+# ✅ إضافة وقت الإرسال
+timestamp = datetime.now().strftime("%I:%M %p")
+full_message = f"🌙 {message}\n\n⏰ {timestamp}"
+
+sent_count = 0
+
+# إرسال للمستخدمين
+for uid in target_users:
+    if uid not in notifications_off:
+        try:
+            line_bot_api.push_message(uid, TextSendMessage(text=full_message))
+            sent_count += 1
+        except:
+            pass
+
+# إرسال للمجموعات
+for gid in target_groups:
+    if gid not in notifications_off:
+        try:
+            line_bot_api.push_message(gid, TextSendMessage(text=full_message))
+            sent_count += 1
+        except:
+            pass
+
+# ✨ تحديث الإحصائيات
+bot_stats["total_reminders"] = bot_stats.get("total_reminders", 0) + sent_count
+save_stats()
+```
+
+def scheduled_messages():
+“”“نظام الإرسال التلقائي المجدول”””
+while True:
+send_random_message_to_all()
+# ✨ وقت عشوائي بين 4-5 ساعات (14400-18000 ثانية)
+time.sleep(random.randint(14400, 18000))
+
+# بدء خيط الإرسال التلقائي
+
+threading.Thread(target=scheduled_messages, daemon=True).start()
+
+# ═══════════════════════════════════════════════════════════
+
+# Webhook Routes
+
+# ═══════════════════════════════════════════════════════════
+
+@app.route(”/”, methods=[“GET”])
+def home():
+“”“صفحة الحالة الرئيسية”””
+return f”””
+<html>
+<head><title>Islamic Bot Status</title></head>
+<body style="font-family: Arial; text-align: center; padding: 50px;">
+<h1>🤖 البوت يعمل بنجاح</h1>
+<p>📊 إجمالي المستخدمين: {len(target_users)}</p>
+<p>👥 إجمالي المجموعات: {len(target_groups)}</p>
+<p>✉️ إجمالي التذكيرات المرسلة: {bot_stats.get(‘total_reminders’, 0)}</p>
+</body>
+</html>
+“””, 200
+
+@app.route(”/callback”, methods=[“POST”])
+def callback():
+“”“معالجة Webhook من LINE”””
+signature = request.headers.get(“X-Line-Signature”, “”)
+body = request.get_data(as_text=True)
+try:
+handler.handle(body, signature)
+except InvalidSignatureError:
+pass
+return “OK”, 200
+
+# ═══════════════════════════════════════════════════════════
+
+# حماية ضد الروابط المزعجة
+
+# ═══════════════════════════════════════════════════════════
+
+links_count = {}
+LINK_WARNING_THRESHOLD = 2
+
+def handle_links(event, user_id):
+“”“كشف ومنع الروابط المتكررة”””
+try:
+text = event.message.text.strip()
+if any(keyword in text for keyword in [“http://”, “https://”, “www.”]):
+links_count[user_id] = links_count.get(user_id, 0) + 1
+
+```
+        if links_count[user_id] >= LINK_WARNING_THRESHOLD:
+            try:
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="⚠️ الرجاء عدم تكرار الروابط")
+                )
+            except:
+                pass
+        return True
+except:
+    pass
+return False
+```
+
+# ═══════════════════════════════════════════════════════════
+
+# نظام التسبيح الإلكتروني
+
+# ═══════════════════════════════════════════════════════════
+
+TASBIH_LIMIT = 33
+TASBIH_TYPES = [“سبحان الله”, “الحمد لله”, “الله أكبر”, “استغفر الله”]
+
+def ensure_user_counts(uid):
+“”“التأكد من وجود عداد تسبيح للمستخدم”””
+if uid not in tasbih_counts:
+tasbih_counts[uid] = {t: 0 for t in TASBIH_TYPES}
+
+def reset_tasbih(uid):
+“”“إعادة تعيين عداد التسبيح”””
+tasbih_counts[uid] = {t: 0 for t in TASBIH_TYPES}
+save_data()
+
+def get_tasbih_progress(uid):
+“”“عرض تقدم التسبيح مع شريط تقدم”””
+counts = tasbih_counts[uid]
+progress_bar = “”
+
+```
+for tasbih_type in TASBIH_TYPES:
+    count = counts[tasbih_type]
+    percentage = (count / TASBIH_LIMIT) * 100
+    filled = int(percentage / 10)
+    bar = "▓" * filled + "░" * (10 - filled)
+    progress_bar += f"{tasbih_type}: {count}/33\n{bar} {percentage:.0f}%\n\n"
+
+return progress_bar.strip()
+```
+
+# ═══════════════════════════════════════════════════════════
+
+# معالج الرسائل الرئيسي
+
+# ═══════════════════════════════════════════════════════════
+
+@handler.add(MessageEvent, message=TextMessage)
+def handle_message(event):
+“”“معالجة جميع الرسائل الواردة”””
+try:
+user_text = event.message.text.strip()
+user_id = event.source.user_id
+gid = getattr(event.source, ‘group_id’, None)
+first_time = False
+
+```
+    # ═══════════════════════════════════════════════════════
+    #          تسجيل المستخدمين والمجموعات تلقائياً
+    # ═══════════════════════════════════════════════════════
+    if user_id not in target_users:
+        target_users.add(user_id)
+        first_time = True
+
+    if gid and gid not in target_groups:
+        target_groups.add(gid)
+        first_time = True
+
+    save_data()
+    ensure_user_counts(user_id)
+
+    # ✨ تحديث الإحصائيات
+    bot_stats["total_messages"] = bot_stats.get("total_messages", 0) + 1
+    today = datetime.now().strftime("%Y-%m-%d")
+    daily_users = bot_stats.get("daily_active_users", {})
+    daily_users[today] = daily_users.get(today, set())
+    if isinstance(daily_users[today], list):
+        daily_users[today] = set(daily_users[today])
+    daily_users[today].add(user_id)
+    bot_stats["daily_active_users"] = {k: list(v) if isinstance(v, set) else v for k, v in daily_users.items()}
+    save_stats()
+
+    # إرسال ترحيب للمستخدمين الجدد
+    if first_time:
+        welcome_msg = "🌙 السلام عليكم ورحمة الله وبركاته\n\nمرحباً بك في بوت التذكير الإسلامي!\n\n📌 اكتب 'مساعدة' لعرض الأوامر"
+        try:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=welcome_msg))
+        except:
+            pass
+        return
+
+    # ═══════════════════════════════════════════════════════
+    #                    حماية الروابط
+    # ═══════════════════════════════════════════════════════
+    if handle_links(event, user_id):
+        return
+
+    # ═══════════════════════════════════════════════════════
+    #                   الأوامر النصية
+    # ═══════════════════════════════════════════════════════
+    
+    # 📖 أمر المساعدة
+    if user_text.lower() in ["مساعدة", "help", "الأوامر"]:
+        help_text = """
+```
+
+🌙 أوامر البوت الإسلامي
+
+📿 التسبيح:
+• سبحان الله / الحمد لله / الله أكبر / استغفر الله
+• تسبيح - عرض التقدم
+• إعادة - إعادة تعيين العداد
+
+📨 التذكير:
+• ذكرني - احصل على ذكر/دعاء فوري
+• إيقاف - إيقاف التذكير التلقائي
+• تشغيل - تشغيل التذكير التلقائي
+
+📊 الإحصائيات:
+• إحصائياتي - عرض إحصائياتك
+• حالة البوت - معلومات البوت
+
+❓ مساعدة - عرض هذه القائمة
+
+━━━━━━━━━━━━━━━━━━━━
+جزاك الله خيراً 💚
+“””
+try:
+line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text.strip()))
+except:
+pass
+return
+
+```
+    # 📊 عرض التسبيح مع شريط التقدم
+    if user_text.lower() in ["تسبيح", "عداد", "التسبيح"]:
+        progress = get_tasbih_progress(user_id)
+        try:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"📿 تقدم التسبيح:\n\n{progress}"))
+        except:
+            pass
+        return
+
+    # 🔄 إعادة تعيين التسبيح
+    if user_text.lower() in ["إعادة", "reset", "ريست"]:
+        reset_tasbih(user_id)
+        try:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ تم إعادة تعيين عداد التسبيح"))
+        except:
+            pass
+        return
+
+    # 📊 إحصائيات المستخدم
+    if user_text.lower() in ["إحصائياتي", "احصائياتي", "stats"]:
+        counts = tasbih_counts[user_id]
+        total = sum(counts.values())
+        stats_text = f"""
+```
+
+📊 إحصائياتك الشخصية:
+
+📿 إجمالي التسبيحات: {total}
+سبحان الله: {counts[‘سبحان الله’]}
+الحمد لله: {counts[‘الحمد لله’]}
+الله أكبر: {counts[‘الله أكبر’]}
+استغفر الله: {counts[‘استغفر الله’]}
+
+🎯 المكتملة: {sum(1 for c in counts.values() if c >= TASBIH_LIMIT)}/4
+“””
+try:
+line_bot_api.reply_message(event.reply_token, TextSendMessage(text=stats_text.strip()))
+except:
+pass
+return
+
+```
+    # 🤖 حالة البوت
+    if user_text.lower() in ["حالة البوت", "الحالة", "status"]:
+        status_text = f"""
+```
+
+🤖 حالة البوت:
+
+👥 المستخدمين: {len(target_users)}
+🏘️ المجموعات: {len(target_groups)}
+✉️ التذكيرات المرسلة: {bot_stats.get(‘total_reminders’, 0)}
+💬 الرسائل المعالجة: {bot_stats.get(‘total_messages’, 0)}
+🟢 الحالة: يعمل بنجاح
+“””
+try:
+line_bot_api.reply_message(event.reply_token, TextSendMessage(text=status_text.strip()))
+except:
+pass
+return
+
+```
+    # ═══════════════════════════════════════════════════════
+    #                  نظام التسبيح التفاعلي
+    # ═══════════════════════════════════════════════════════
+    clean_text = user_text.replace(" ", "")
+    key_map = {
+        "سبحانالله": "سبحان الله",
+        "الحمدلله": "الحمد لله",
+        "اللهأكبر": "الله أكبر",
+        "استغفرالله": "استغفر الله"
+    }
+    
+    key = key_map.get(clean_text)
+    if key:
+        if tasbih_counts[user_id][key] < TASBIH_LIMIT:
+            tasbih_counts[user_id][key] += 1
+            save_data()
+
+        # إشعار اكتمال ذكر واحد
+        if tasbih_counts[user_id][key] == TASBIH_LIMIT:
+            try:
+                line_bot_api.push_message(
+                    user_id,
+                    TextSendMessage(text=f"✨ ماشاء الله! اكتملت {key} 33 مرة!")
+                )
+            except:
+                pass
+
+        # عرض التقدم
+        progress = get_tasbih_progress(user_id)
+        try:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"📿 {progress}"))
+        except:
+            pass
+
+        # إشعار اكتمال كل الأذكار
+        counts = tasbih_counts[user_id]
+        if all(counts[k] >= TASBIH_LIMIT for k in TASBIH_TYPES):
+            try:
+                line_bot_api.push_message(
+                    user_id,
+                    TextSendMessage(text="🎉 مبروك! اكتملت كل الأذكار الأربعة!\n\nجزاك الله خيراً\nوجعل الله لك ولوالديك الجنة 💚")
+                )
+            except:
+                pass
+        return
+
+    # ═══════════════════════════════════════════════════════
+    #              أمر ذكرني (للمرسل فقط)
+    # ═══════════════════════════════════════════════════════
+    if user_text.lower() in ["ذكرني", "تذكير", "ذكر"]:
+        category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+        message = random.choice(content.get(category, ["لا يوجد محتوى"]))
+        
+        timestamp = datetime.now().strftime("%I:%M %p")
+        full_message = f"🌙 {message}\n\n⏰ {timestamp}"
+        
+        try:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=full_message))
+        except:
+            pass
+        return
+
+    # ═══════════════════════════════════════════════════════
+    #              إيقاف/تشغيل التذكير التلقائي
+    # ═══════════════════════════════════════════════════════
+    if user_text.lower() in ["إيقاف", "stop", "ايقاف"]:
+        target_id = gid if gid else user_id
+        notifications_off.add(target_id)
+        save_data()
+        try:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="✅ تم إيقاف التذكير التلقائي\n\nلتشغيله مجدداً اكتب: تشغيل")
+            )
+        except:
+            pass
+        return
+
+    if user_text.lower() in ["تشغيل", "start", "بدء"]:
+        target_id = gid if gid else user_id
+        if target_id in notifications_off:
+            notifications_off.remove(target_id)
+            save_data()
+        try:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="✅ تم تشغيل التذكير التلقائي\n\nستصلك رسائل كل 4-5 ساعات 🌙")
+            )
+        except:
+            pass
+        return
+
+except Exception as e:
+    print(f"Error in handle_message: {e}")
+    pass
+```
+
+# ═══════════════════════════════════════════════════════════
+
+# تشغيل التطبيق
+
+# ═══════════════════════════════════════════════════════════
+
+if **name** == “**main**”:
+print(“🚀 البوت جاهز للعمل!”)
+print(f”📊 المستخدمين المسجلين: {len(target_users)}”)
+print(f”👥 المجموعات المسجلة: {len(target_groups)}”)
+app.run(host=“0.0.0.0”, port=PORT)
