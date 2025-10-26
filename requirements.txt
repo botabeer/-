@@ -5,3 +5,5 @@ apscheduler
 gunicorn
 pytz
 praytimes
+aiohttp>=3.8.7
+requests==2.31.0
