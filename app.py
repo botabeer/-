@@ -7,8 +7,9 @@ import re
 import logging
 from collections import defaultdict
 from flask import Flask, request
-from linebot import LineBotApi, WebhookHandler
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from linebot.v3.messaging import MessagingApi
+from linebot.v3.webhook import WebhookHandler
 from dotenv import load_dotenv
 
 # === إعداد البوت ===
@@ -20,8 +21,8 @@ if not TOKEN or not SECRET:
     raise ValueError("يرجى ضبط مفاتيح LINE في ملف .env")
 
 app = Flask(__name__)
-line_bot_api = LineBotApi(TOKEN)
-handler = WebhookHandler(SECRET)
+messaging_api = MessagingApi(channel_access_token=TOKEN)
+handler = WebhookHandler(channel_secret=SECRET)
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 
@@ -95,6 +96,8 @@ def help_message():
         "- سبحان الله\n- الحمد لله\n- الله أكبر\n- استغفر الله\n- لا إله إلا الله\n\n"
         "كل ذكر 33 مرة، اكتب إعادة لمسح العداد.\n\n"
         "اكتب ذكرني لإرسال ذكر أو حديث أو آية.\n"
+        "اكتب تفعيل التذكير لتفعيل الرسائل التلقائية.\n"
+        "اكتب إيقاف التذكير لإيقاف الرسائل التلقائية.\n"
     )
 
 # === التذكير التلقائي للمجموعات ===
@@ -104,7 +107,7 @@ def auto_reminder():
             text = random_reminder()
             for gid in list(subscribed_groups):
                 try:
-                    line_bot_api.push_message(gid, TextSendMessage(text=text))
+                    messaging_api.push_message(to=gid, messages=[TextMessage(text=text)])
                     logging.info(f"تم إرسال تذكير إلى المجموعة {gid}")
                 except Exception as e:
                     logging.error(f"فشل إرسال إلى {gid}: {e}")
@@ -120,13 +123,12 @@ def handle_message(event):
     gid = getattr(event.source, "group_id", None)
     tid = uid or gid
 
-    # حماية من السبام والروابط
     if gid and uid:
         if not rate_limit(uid, gid):
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="توقف عن إرسال الرسائل بسرعة."))
+            messaging_api.reply_message(reply_token=event.reply_token, messages=[TextMessage(text="توقف عن إرسال الرسائل بسرعة.")])
             return
         if not check_links(txt, gid):
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="تم حظر الرابط المكرر."))
+            messaging_api.reply_message(reply_token=event.reply_token, messages=[TextMessage(text="تم حظر الرابط المكرر.")])
             return
 
     txt_lower = txt.lower()
@@ -149,7 +151,7 @@ def handle_message(event):
         response = handle_tasbih(txt, tid)
 
     if response:
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=response))
+        messaging_api.reply_message(reply_token=event.reply_token, messages=[TextMessage(text=response)])
 
 # === Webhook ===
 @app.route("/callback", methods=["POST"])
