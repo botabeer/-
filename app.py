@@ -6,7 +6,7 @@ import time
 import re
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, Dict, Set
 from flask import Flask, request, jsonify
 from linebot.models import MessageEvent, TextMessage
@@ -19,424 +19,217 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-    """Centralized configuration"""
     LINE_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
     LINE_SECRET = os.getenv("LINE_CHANNEL_SECRET")
     PORT = int(os.getenv("PORT", 5000))
-    
-    # Rate limiting
     SPAM_LIMIT = 5
     SPAM_PERIOD = 10
     LINK_LIMIT = 2
-    
-    # Tasbih settings
     TASBIH_LIMIT = 33
-    TASBIH_RESET_HOURS = 24
-    
-    # Reminder settings
-    REMINDER_INTERVAL = 3600  # seconds
-    
-    # Content file
+    REMINDER_INTERVAL = 3600
     CONTENT_FILE = "content.json"
-    
+
     @classmethod
     def validate(cls):
-        """Validate required configuration"""
         if not cls.LINE_TOKEN or not cls.LINE_SECRET:
             raise ValueError("LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET must be set in .env")
 
 Config.validate()
 
-# === Logging Setup ===
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# === Logging ===
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# === Flask App Setup ===
+# === Flask App ===
 app = Flask(__name__)
-messaging_api = MessagingApi(channel_access_token=Config.LINE_TOKEN)
+
+# Messaging API & Webhook Handler
+messaging_api = MessagingApi()  # لا تمرر channel_access_token هنا
 handler = WebhookHandler(channel_secret=Config.LINE_SECRET)
 
 # === Content Manager ===
 class ContentManager:
-    """Manages loading and accessing Islamic content"""
-    
     def __init__(self, filepath: str):
         self.filepath = filepath
-        self.content = self._load_content()
-    
-    def _load_content(self) -> Dict:
-        """Load content from JSON file"""
+        self.content = self.load_content()
+
+    def load_content(self) -> Dict:
         try:
             with open(self.filepath, encoding="utf-8") as f:
-                content = json.load(f)
-                logger.info(f"Content loaded successfully from {self.filepath}")
-                return content
-        except FileNotFoundError:
-            logger.error(f"Content file not found: {self.filepath}")
-            return {"athkar": [], "duas": [], "hadiths": [], "quran": []}
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in {self.filepath}: {e}")
-            return {"athkar": [], "duas": [], "hadiths": [], "quran": []}
+                return json.load(f)
         except Exception as e:
-            logger.error(f"Error loading content: {e}")
+            logger.error(f"Error loading content.json: {e}")
             return {"athkar": [], "duas": [], "hadiths": [], "quran": []}
-    
+
     def get_athkar(self) -> list:
         return self.content.get("athkar", [])
-    
-    def get_random_content(self) -> str:
-        """Get random content from all categories"""
+
+    def get_random(self) -> str:
         categories = ["athkar", "duas", "hadiths", "quran"]
-        available_categories = [cat for cat in categories if self.content.get(cat)]
-        
-        if not available_categories:
+        available = [cat for cat in categories if self.content.get(cat)]
+        if not available:
             return "لا يوجد محتوى متاح حالياً."
-        
-        category = random.choice(available_categories)
-        data = self.content[category]
-        return random.choice(data) if data else "لا يوجد محتوى متاح حالياً."
-    
-    def reload(self):
-        """Reload content from file"""
-        self.content = self._load_content()
+        cat = random.choice(available)
+        return random.choice(self.content[cat])
 
 content_manager = ContentManager(Config.CONTENT_FILE)
 
 # === Rate Limiter ===
 class RateLimiter:
-    """Handle rate limiting for spam protection"""
-    
     def __init__(self):
         self.spam_records = defaultdict(list)
         self.link_counts = defaultdict(lambda: defaultdict(int))
         self.lock = threading.Lock()
-    
-    def check_rate_limit(self, user_id: str, group_id: str, 
-                        limit: int = Config.SPAM_LIMIT, 
-                        period: int = Config.SPAM_PERIOD) -> bool:
-        """Check if user exceeded rate limit"""
+
+    def check_rate(self, user_id: str, group_id: str) -> bool:
         now = time.time()
         key = f"{group_id}:{user_id}"
-        
         with self.lock:
-            # Clean old records
-            self.spam_records[key] = [
-                t for t in self.spam_records[key] 
-                if now - t < period
-            ]
-            # Add current request
+            self.spam_records[key] = [t for t in self.spam_records[key] if now - t < Config.SPAM_PERIOD]
             self.spam_records[key].append(now)
-            
-            return len(self.spam_records[key]) <= limit
-    
-    def check_links(self, text: str, group_id: str, 
-                   limit: int = Config.LINK_LIMIT) -> bool:
-        """Check if links are being spammed"""
+            return len(self.spam_records[key]) <= Config.SPAM_LIMIT
+
+    def check_links(self, text: str, group_id: str) -> bool:
         urls = re.findall(r'https?://[^\s]+', text)
-        
         if not urls:
             return True
-        
         with self.lock:
             for url in urls:
                 self.link_counts[group_id][url] += 1
-                if self.link_counts[group_id][url] > limit:
-                    logger.warning(f"Link spam detected in {group_id}: {url}")
+                if self.link_counts[group_id][url] > Config.LINK_LIMIT:
                     return False
-        
         return True
-    
-    def reset_link_counts(self, group_id: str):
-        """Reset link counts for a group"""
-        with self.lock:
-            if group_id in self.link_counts:
-                del self.link_counts[group_id]
 
 rate_limiter = RateLimiter()
 
 # === Tasbih Counter ===
 class TasbihCounter:
-    """Handle tasbih counting with auto-reset"""
-    
     def __init__(self):
         self.counts = defaultdict(lambda: defaultdict(int))
-        self.last_reset = defaultdict(lambda: datetime.now())
         self.lock = threading.Lock()
-    
-    def _should_reset(self, user_id: str) -> bool:
-        """Check if counter should be reset based on time"""
-        hours_passed = (datetime.now() - self.last_reset[user_id]).total_seconds() / 3600
-        return hours_passed >= Config.TASBIH_RESET_HOURS
-    
-    def increment(self, user_id: str, tasbih_type: str) -> dict:
-        """Increment tasbih count and return status"""
+
+    def increment(self, user_id: str, tasbih: str) -> dict:
         with self.lock:
-            if self._should_reset(user_id):
-                self.counts[user_id] = defaultdict(int)
-                self.last_reset[user_id] = datetime.now()
-            
-            self.counts[user_id][tasbih_type] += 1
-            count = self.counts[user_id][tasbih_type]
-            
-            return {
-                "count": count,
-                "limit": Config.TASBIH_LIMIT,
-                "completed": count >= Config.TASBIH_LIMIT
-            }
-    
+            self.counts[user_id][tasbih] += 1
+            count = self.counts[user_id][tasbih]
+            return {"count": count, "completed": count >= Config.TASBIH_LIMIT}
+
     def reset(self, user_id: str):
-        """Manually reset counter"""
         with self.lock:
             self.counts[user_id] = defaultdict(int)
-            self.last_reset[user_id] = datetime.now()
-    
-    def get_status(self, user_id: str) -> dict:
-        """Get current tasbih status"""
-        with self.lock:
-            return dict(self.counts[user_id])
 
 tasbih_counter = TasbihCounter()
 
 # === Reminder Manager ===
 class ReminderManager:
-    """Manage automatic reminders for groups"""
-    
     def __init__(self):
-        self.subscribed_groups: Set[str] = set()
+        self.groups: Set[str] = set()
         self.lock = threading.Lock()
         self.running = False
-    
+
     def subscribe(self, group_id: str):
-        """Subscribe group to reminders"""
         with self.lock:
-            self.subscribed_groups.add(group_id)
-            logger.info(f"Group {group_id} subscribed to reminders")
-    
+            self.groups.add(group_id)
+
     def unsubscribe(self, group_id: str):
-        """Unsubscribe group from reminders"""
         with self.lock:
-            self.subscribed_groups.discard(group_id)
-            logger.info(f"Group {group_id} unsubscribed from reminders")
-    
-    def is_subscribed(self, group_id: str) -> bool:
-        """Check if group is subscribed"""
-        with self.lock:
-            return group_id in self.subscribed_groups
-    
+            self.groups.discard(group_id)
+
     def start(self):
-        """Start reminder thread"""
         if not self.running:
             self.running = True
-            thread = threading.Thread(target=self._reminder_loop, daemon=True)
-            thread.start()
-            logger.info("Reminder thread started")
-    
-    def _reminder_loop(self):
-        """Main reminder loop"""
+            threading.Thread(target=self.loop, daemon=True).start()
+
+    def loop(self):
         while self.running:
-            try:
-                self._send_reminders()
-            except Exception as e:
-                logger.error(f"Error in reminder loop: {e}")
-            
+            with self.lock:
+                groups = list(self.groups)
+            text = content_manager.get_random()
+            for gid in groups:
+                try:
+                    request = PushMessageRequest(to=gid, messages=[TextMessage(text=text)])
+                    messaging_api.push_message(request)
+                except Exception as e:
+                    logger.error(f"Failed to send reminder to {gid}: {e}")
             time.sleep(Config.REMINDER_INTERVAL)
-    
-    def _send_reminders(self):
-        """Send reminders to subscribed groups"""
-        with self.lock:
-            groups = list(self.subscribed_groups)
-        
-        if not groups:
-            return
-        
-        text = content_manager.get_random_content()
-        
-        for group_id in groups:
-            try:
-                request = PushMessageRequest(
-                    to=group_id,
-                    messages=[TextMessage(text=text)]
-                )
-                messaging_api.push_message(request)
-                logger.info(f"Reminder sent to group {group_id}")
-            except Exception as e:
-                logger.error(f"Failed to send reminder to {group_id}: {e}")
 
 reminder_manager = ReminderManager()
+reminder_manager.start()
 
-# === Message Handler ===
-class MessageHandler:
-    """Handle different types of messages"""
-    
-    @staticmethod
-    def help_message() -> str:
-        """Generate help message"""
-        athkar_list = content_manager.get_athkar()
-        athkar_text = "\n".join([f"- {athkar}" for athkar in athkar_list[:5]]) if athkar_list else "- سبحان الله\n- الحمد لله\n- الله أكبر"
-        
-        return (
-            "🤲 بوت ذكرني الإسلامي\n\n"
-            "📿 التسبيح:\n"
-            f"{athkar_text}\n\n"
-            f"كل ذكر {Config.TASBIH_LIMIT} مرة\n\n"
-            "📋 الأوامر:\n"
-            "• مساعدة - عرض هذه الرسالة\n"
-            "• ذكرني - ذكر عشوائي\n"
-            "• إعادة - مسح عداد التسبيح\n"
-        )
-    
-    @staticmethod
-    def handle_tasbih(text: str, user_id: str) -> Optional[str]:
-        """Handle tasbih counting"""
-        athkar_list = content_manager.get_athkar()
-        
-        if not athkar_list:
-            return None
-        
-        # Normalize text for matching
-        clean_text = text.replace(" ", "").lower()
-        athkar_map = {
-            athkar.replace(" ", "").lower(): athkar 
-            for athkar in athkar_list
-        }
-        
-        if clean_text not in athkar_map:
-            return None
-        
-        tasbih_type = athkar_map[clean_text]
-        status = tasbih_counter.increment(user_id, tasbih_type)
-        
-        if status["completed"]:
-            return f"✅ {tasbih_type}\nاكتمل! ({status['count']}/{status['limit']}) 🎉"
-        else:
-            return f"📿 {tasbih_type}\nالعدد: {status['count']}/{status['limit']}"
-    
-    @staticmethod
-    def process_message(text: str, user_id: str, group_id: Optional[str]) -> Optional[str]:
-        """Process incoming message and return response"""
-        text_lower = text.lower().strip()
-        
-        # Help command
-        if text_lower in ["مساعدة", "الاوامر", "help", "؟", "الأوامر"]:
-            return MessageHandler.help_message()
-        
-        # Reset tasbih
-        if text_lower in ["إعادة", "مسح", "إعادة التسبيح", "اعادة"]:
-            tasbih_counter.reset(user_id)
-            return "✅ تم مسح عداد التسبيح"
-        
-        # Random reminder
-        if text_lower in ["ذكرني", "ذكر", "آية", "حديث"]:
-            return content_manager.get_random_content()
-        
-        # Subscribe to reminders (groups only)
-        if text_lower in ["تفعيل التذكير", "تفعيل", "اشتراك"] and group_id:
-            reminder_manager.subscribe(group_id)
-            return "✅ تم تفعيل التذكير التلقائي للمجموعة\nسيتم إرسال تذكير كل ساعة"
-        
-        # Unsubscribe from reminders (groups only)
-        if text_lower in ["إيقاف التذكير", "إيقاف", "إلغاء الاشتراك", "ايقاف"] and group_id:
-            reminder_manager.unsubscribe(group_id)
-            return "✅ تم إيقاف التذكير التلقائي للمجموعة"
-        
-        # Try tasbih
-        return MessageHandler.handle_tasbih(text, user_id)
-
-# === LINE Bot Event Handler ===
+# === LINE Message Handler ===
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    """Handle incoming LINE messages"""
     try:
         text = event.message.text.strip()
         user_id = getattr(event.source, "user_id", None)
         group_id = getattr(event.source, "group_id", None)
-        
-        # Use group_id as fallback for user_id
-        effective_user_id = user_id or group_id or "unknown"
-        
-        # Rate limiting for groups
+        effective_id = user_id or group_id or "unknown"
+
+        # Rate limiting
         if group_id and user_id:
-            if not rate_limiter.check_rate_limit(user_id, group_id):
+            if not rate_limiter.check_rate(user_id, group_id):
                 messaging_api.reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text="⚠️ توقف عن إرسال الرسائل")]
-                    )
+                    ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="⚠️ توقف عن الإرسال")])
                 )
                 return
-            
             if not rate_limiter.check_links(text, group_id):
                 messaging_api.reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text="⚠️ تم حظر الرابط المكرر")]
-                    )
+                    ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="⚠️ تم حظر الرابط المكرر")])
                 )
                 return
-        
-        # Process message
-        response = MessageHandler.process_message(text, effective_user_id, group_id)
-        
-        # Send response if available
+
+        # Commands
+        response = None
+        txt = text.lower()
+        if txt in ["مساعدة", "help", "الاوامر", "؟"]:
+            athkar_list = content_manager.get_athkar()[:5]
+            athkar_text = "\n".join([f"- {a}" for a in athkar_list])
+            response = f"📿 التسبيح:\n{athkar_text}\nكل ذكر {Config.TASBIH_LIMIT} مرة"
+        elif txt in ["إعادة", "مسح"]:
+            tasbih_counter.reset(effective_id)
+            response = "✅ تم مسح عداد التسبيح"
+        elif txt in ["ذكرني", "آية", "حديث"]:
+            response = content_manager.get_random()
+        elif txt in ["تفعيل التذكير", "تفعيل"] and group_id:
+            reminder_manager.subscribe(group_id)
+            response = "✅ تم تفعيل التذكير التلقائي"
+        elif txt in ["إيقاف التذكير", "إيقاف"] and group_id:
+            reminder_manager.unsubscribe(group_id)
+            response = "✅ تم إيقاف التذكير التلقائي"
+        else:
+            # Tasbih counting
+            athkar_list = content_manager.get_athkar()
+            athkar_map = {a.replace(" ", "").lower(): a for a in athkar_list}
+            clean_text = text.replace(" ", "").lower()
+            if clean_text in athkar_map:
+                tasbih_type = athkar_map[clean_text]
+                status = tasbih_counter.increment(effective_id, tasbih_type)
+                response = f"📿 {tasbih_type} العدد: {status['count']}/{Config.TASBIH_LIMIT}"
+                if status["completed"]:
+                    response += " ✅ اكتمل!"
+
         if response:
             messaging_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=response)]
-                )
+                ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=response)])
             )
-    
     except Exception as e:
         logger.error(f"Error handling message: {e}", exc_info=True)
 
 # === Flask Routes ===
 @app.route("/callback", methods=["POST"])
 def callback():
-    """LINE webhook callback"""
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
-    
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        logger.error("Invalid signature")
         return "Invalid signature", 400
-    except Exception as e:
-        logger.error(f"Webhook error: {e}", exc_info=True)
-        return "Internal error", 500
-    
     return "OK"
 
 @app.route("/")
 def index():
-    """Health check endpoint"""
-    return jsonify({
-        "status": "running",
-        "bot": "Islamic Reminder Bot",
-        "version": "2.0"
-    })
-
-@app.route("/health")
-def health():
-    """Detailed health check"""
-    return jsonify({
-        "status": "healthy",
-        "subscribed_groups": len(reminder_manager.subscribed_groups),
-        "content_loaded": bool(content_manager.content)
-    })
-
-# === Application Startup ===
-def initialize():
-    """Initialize application"""
-    logger.info("Starting Islamic Reminder Bot...")
-    logger.info(f"Content categories: {list(content_manager.content.keys())}")
-    reminder_manager.start()
-    logger.info("Bot initialized successfully")
+    return jsonify({"status": "running", "bot": "Islamic Reminder Bot"})
 
 if __name__ == "__main__":
-    initialize()
     logger.info(f"Starting server on port {Config.PORT}")
-    app.run(host="0.0.0.0", port=Config.PORT, debug=False)
+    app.run(host="0.0.0.0", port=Config.PORT)
