@@ -11,7 +11,7 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from dotenv import load_dotenv
 
-# الإعدادات الأساسية
+# === إعداد البوت ===
 load_dotenv()
 TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 SECRET = os.getenv("LINE_CHANNEL_SECRET")
@@ -25,7 +25,7 @@ handler = WebhookHandler(SECRET)
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# تحميل البيانات من content.json
+# === تحميل محتوى الذكر والدعاء والقرآن ===
 try:
     with open("content.json", encoding="utf-8") as f:
         CONTENT = json.load(f)
@@ -33,11 +33,11 @@ except Exception as e:
     logging.error(f"خطأ في قراءة ملف content.json: {e}")
     CONTENT = {"athkar": [], "duas": [], "hadiths": [], "quran": []}
 
-# الإعدادات
+# === إعدادات البوت ===
 SPAM_LIMIT = 5
 LINK_LIMIT = 2
 TASBIH_LIMIT = 33
-REMINDER_INTERVAL = 3600
+REMINDER_INTERVAL = 3600  # بالثواني
 
 spam = defaultdict(list)
 links = defaultdict(lambda: defaultdict(int))
@@ -45,7 +45,7 @@ tasbih_counts = defaultdict(lambda: defaultdict(int))
 subscribed_groups = set()
 lock = threading.Lock()
 
-# حماية من السبام
+# === حماية من السبام ===
 def rate_limit(uid, gid, limit=SPAM_LIMIT, period=10):
     now = time.time()
     key = f"{gid}:{uid}"
@@ -65,7 +65,7 @@ def check_links(txt, gid):
                 return False
     return True
 
-# وظائف البوت
+# === وظائف البوت ===
 def handle_tasbih(txt, tid):
     clean = txt.replace(" ", "").lower()
     tasbih_map = {s.replace(" ", "").lower(): s for s in CONTENT["athkar"]}
@@ -81,7 +81,7 @@ def handle_tasbih(txt, tid):
 def random_reminder():
     category = random.choice(["athkar", "duas", "hadiths", "quran"])
     data = CONTENT.get(category, [])
-    if not 
+    if not data:
         return "لا يوجد محتوى متاح حالياً."
     return random.choice(data)
 
@@ -94,7 +94,7 @@ def help_message():
         "اكتب ذكّرني لإرسال ذكر أو حديث أو آية.\n"
     )
 
-# التذكير التلقائي
+# === التذكير التلقائي للمجموعات ===
 def auto_reminder():
     while True:
         if subscribed_groups:
@@ -109,7 +109,7 @@ def auto_reminder():
 
 threading.Thread(target=auto_reminder, daemon=True).start()
 
-# التعامل مع الرسائل
+# === التعامل مع الرسائل ===
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     txt = event.message.text.strip()
@@ -117,6 +117,7 @@ def handle_message(event):
     gid = getattr(event.source, "group_id", None)
     tid = uid or gid
 
+    # حماية من السبام والروابط
     if gid and uid:
         if not rate_limit(uid, gid):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="توقف عن إرسال الرسائل بسرعة."))
@@ -147,7 +148,7 @@ def handle_message(event):
     if response:
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=response))
 
-# Webhook
+# === Webhook ===
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
@@ -158,6 +159,7 @@ def callback():
         logging.error(f"خطأ في webhook: {e}")
     return "OK"
 
+# === تشغيل السيرفر ===
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     logging.info(f"تشغيل السيرفر على المنفذ {port}")
