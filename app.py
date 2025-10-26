@@ -67,8 +67,11 @@ def check_links(txt, gid):
 
 # === وظائف البوت ===
 def handle_tasbih(txt, tid):
+    athkar_list = CONTENT.get("athkar", [])
+    if not athkar_list:
+        return "لا يوجد أذكار حالياً."
     clean = txt.replace(" ", "").lower()
-    tasbih_map = {s.replace(" ", "").lower(): s for s in CONTENT["athkar"]}
+    tasbih_map = {s.replace(" ", "").lower(): s for s in athkar_list}
     if clean not in tasbih_map:
         return None
     typ = tasbih_map[clean]
@@ -91,7 +94,7 @@ def help_message():
         "التسبيح:\n"
         "- سبحان الله\n- الحمد لله\n- الله أكبر\n- استغفر الله\n- لا إله إلا الله\n\n"
         "كل ذكر 33 مرة، اكتب إعادة لمسح العداد.\n\n"
-        "اكتب ذكّرني لإرسال ذكر أو حديث أو آية.\n"
+        "اكتب ذكرني لإرسال ذكر أو حديث أو آية.\n"
     )
 
 # === التذكير التلقائي للمجموعات ===
@@ -158,6 +161,11 @@ def callback():
     except Exception as e:
         logging.error(f"خطأ في webhook: {e}")
     return "OK"
+
+# === صفحة رئيسية لتجنب 404 ===
+@app.route("/")
+def index():
+    return "بوت ذكرني الإسلامي يعمل!"
 
 # === تشغيل السيرفر ===
 if __name__ == "__main__":
