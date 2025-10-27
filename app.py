@@ -1,6 +1,6 @@
 from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
+from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import os, random, json, threading, time, logging
 from dotenv import load_dotenv
@@ -27,7 +27,6 @@ DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
 HELP_FILE = "help.txt"
 FADL_FILE = "fadl.json"
-INDEX_FILE = "fadl_index.json"
 
 # ================= تحميل بيانات فضل =================
 def load_fadl_content():
@@ -43,28 +42,8 @@ def load_fadl_content():
         logger.error(f"خطأ في تحميل {FADL_FILE}: {e}")
         return []
 
-# تحميل مؤشر الدور
-def load_fadl_index():
-    if not os.path.exists(INDEX_FILE):
-        with open(INDEX_FILE, "w", encoding="utf-8") as f:
-            json.dump({"index": 0}, f, ensure_ascii=False)
-        return 0
-    try:
-        with open(INDEX_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data.get("index", 0)
-    except:
-        return 0
-
-def save_fadl_index(i):
-    try:
-        with open(INDEX_FILE, "w", encoding="utf-8") as f:
-            json.dump({"index": i}, f, ensure_ascii=False)
-    except Exception as e:
-        logger.error(f"خطأ في حفظ مؤشر الفضل: {e}")
-
 fadl_content = load_fadl_content()
-fadl_index = load_fadl_index()
+fadl_index = 0  # مؤشر التتابع
 
 def get_next_fadl():
     global fadl_index
@@ -72,7 +51,6 @@ def get_next_fadl():
         return "لا يوجد فضل متاح حالياً."
     message = fadl_content[fadl_index]
     fadl_index = (fadl_index + 1) % len(fadl_content)
-    save_fadl_index(fadl_index)
     return message
 
 # ================= تحميل البيانات =================
@@ -128,6 +106,20 @@ def safe_reply_silent_fail(reply_token, message):
     except:
         return False
 
+def get_user_display_name(user_id):
+    try:
+        profile = line_bot_api.get_profile(user_id)
+        return profile.display_name
+    except:
+        return "المستخدم"
+
+def get_group_member_display_name(group_id, user_id):
+    try:
+        profile = line_bot_api.get_group_member_profile(group_id, user_id)
+        return profile.display_name
+    except:
+        return "المستخدم"
+
 def ensure_user_counts(uid):
     if uid not in tasbih_counts:
         tasbih_counts[uid] = {"استغفر الله": 0, "سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
@@ -135,13 +127,75 @@ def ensure_user_counts(uid):
 
 def get_tasbih_status(user_id, gid=None):
     counts = tasbih_counts[user_id]
+    display_name = get_group_member_display_name(gid, user_id) if gid else get_user_display_name(user_id)
     return (
-        f"حالة التسبيح\n\n"
+        f"حالة التسبيح\n{display_name}\n\n"
         f"استغفر الله: {counts['استغفر الله']}/33\n"
         f"سبحان الله: {counts['سبحان الله']}/33\n"
         f"الحمد لله: {counts['الحمد لله']}/33\n"
         f"الله أكبر: {counts['الله أكبر']}/33"
     )
+
+# ================= إرسال رسائل تلقائية =================
+def send_random_message_to_all():
+    try:
+        category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+        messages = content.get(category, [])
+        if not messages:
+            logger.warning(f"لا يوجد محتوى في الفئة {category}")
+            return
+
+        message = random.choice(messages)
+        sent_count = 0
+
+        for uid in list(target_users):
+            if safe_send_message(uid, message):
+                sent_count += 1
+
+        for gid in list(target_groups):
+            if safe_send_message(gid, message):
+                sent_count += 1
+
+        logger.info(f"تم إرسال رسالة تلقائية إلى {sent_count} مستخدم/مجموعة")
+    except Exception as e:
+        logger.error(f"خطأ في إرسال الرسائل التلقائية: {e}")
+
+def scheduled_messages():
+    while True:
+        try:
+            send_random_message_to_all()
+            sleep_time = random.randint(14400, 18000)
+            logger.info(f"الرسالة التلقائية القادمة بعد {sleep_time//3600} ساعة")
+            time.sleep(sleep_time)
+        except Exception as e:
+            logger.error(f"خطأ في جدولة الرسائل: {e}")
+            time.sleep(3600)
+
+threading.Thread(target=scheduled_messages, daemon=True).start()
+
+# ================= حماية الروابط =================
+links_count = {}
+def handle_links(event, user_id, gid=None):
+    try:
+        text = event.message.text.strip()
+        if any(x in text.lower() for x in ["http://", "https://", "www."]):
+            links_count[user_id] = links_count.get(user_id, 0) + 1
+
+            if links_count[user_id] == 2:
+                display_name = get_group_member_display_name(gid, user_id) if gid else get_user_display_name(user_id)
+                warning_msg = f"{display_name}\nالرجاء عدم تكرار إرسال الروابط"
+                safe_reply_silent_fail(event.reply_token, warning_msg)
+                logger.info(f"تحذير المستخدم {user_id} من تكرار الروابط")
+                return True
+
+            elif links_count[user_id] >= 3:
+                logger.info(f"تم تجاهل رابط متكرر من المستخدم {user_id}")
+                return True
+
+            return True
+    except Exception as e:
+        logger.error(f"خطأ في معالجة الروابط: {e}")
+    return False
 
 # ================= معالجة الرسائل =================
 @handler.add(MessageEvent, message=TextMessage)
@@ -154,16 +208,20 @@ def handle_message(event):
         if user_id not in target_users:
             target_users.add(user_id)
             save_data()
+            logger.info(f"تم تسجيل مستخدم جديد: {user_id}")
 
         if gid and gid not in target_groups:
             target_groups.add(gid)
             save_data()
+            logger.info(f"تم تسجيل مجموعة جديدة: {gid}")
 
         ensure_user_counts(user_id)
 
+        if handle_links(event, user_id, gid):
+            return
+
         text_lower = user_text.lower()
 
-        # أمر مساعدة
         if text_lower == "مساعدة":
             try:
                 with open(HELP_FILE, "r", encoding="utf-8") as f:
@@ -173,13 +231,12 @@ def handle_message(event):
                 logger.error(f"خطأ في تحميل ملف المساعدة: {e}")
             return
 
-        # أمر فضل (التسلسل)
+        # أمر فضل بالتتابع
         if text_lower == "فضل":
             message = get_next_fadl()
             safe_reply_silent_fail(event.reply_token, message)
             return
 
-        # التسبيح
         if user_text in ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]:
             tasbih_counts[user_id][user_text] += 1
             save_data()
@@ -192,17 +249,17 @@ def handle_message(event):
             safe_reply_silent_fail(event.reply_token, status)
             return
 
-        # أمر ذكرني
         if text_lower == "ذكرني":
             category = random.choice(["duas", "adhkar", "hadiths", "quran"])
             messages = content.get(category, [])
-            if messages:
-                message = random.choice(messages)
-                safe_reply_silent_fail(event.reply_token, message)
-                for uid in list(target_users):
-                    safe_send_message(uid, message)
-                for g in list(target_groups):
-                    safe_send_message(g, message)
+            if not messages:
+                return
+            message = random.choice(messages)
+            safe_reply_silent_fail(event.reply_token, message)
+            for uid in list(target_users):
+                safe_send_message(uid, message)
+            for g in list(target_groups):
+                safe_send_message(g, message)
             return
 
     except Exception as e:
