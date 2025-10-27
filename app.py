@@ -34,7 +34,7 @@ def load_fadl_content():
         if not os.path.exists(FADL_FILE):
             with open(FADL_FILE, "w", encoding="utf-8") as f:
                 json.dump({"fadl": []}, f, ensure_ascii=False, indent=2)
-            logger.info(f"{FADL_FILE} لم يكن موجودًا، تم إنشاؤه تلقائيًا")
+            logger.info(f"{FADL_FILE} تم إنشاؤه")
         with open(FADL_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data.get("fadl", [])
@@ -43,12 +43,12 @@ def load_fadl_content():
         return []
 
 fadl_content = load_fadl_content()
-fadl_index = 0  # مؤشر التتابع
+fadl_index = 0
 
 def get_next_fadl():
     global fadl_index
     if not fadl_content:
-        return "لا يوجد فضل متاح حالياً."
+        return "لا يوجد فضل متاح"
     message = fadl_content[fadl_index]
     fadl_index = (fadl_index + 1) % len(fadl_content)
     return message
@@ -99,7 +99,7 @@ def safe_send_message(target_id, message):
     except:
         return False
 
-def safe_reply_silent_fail(reply_token, message):
+def safe_reply(reply_token, message):
     try:
         line_bot_api.reply_message(reply_token, TextSendMessage(text=message))
         return True
@@ -120,9 +120,13 @@ def get_group_member_display_name(group_id, user_id):
     except:
         return "المستخدم"
 
+# ================= التسبيح =================
+TASBIH_LIMITS = 33
+TASBIH_KEYS = ["استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر"]
+
 def ensure_user_counts(uid):
     if uid not in tasbih_counts:
-        tasbih_counts[uid] = {"استغفر الله": 0, "سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
+        tasbih_counts[uid] = {key: 0 for key in TASBIH_KEYS}
         save_data()
 
 def get_tasbih_status(user_id, gid=None):
@@ -136,13 +140,36 @@ def get_tasbih_status(user_id, gid=None):
         f"الله أكبر: {counts['الله أكبر']}/33"
     )
 
+def normalize_tasbih_text(text):
+    """تطبيع نص التسبيح لقبول جميع الصيغ"""
+    text = text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("ة", "ه")
+    
+    tasbih_map = {
+        "استغفرالله": "استغفر الله",
+        "استغفراللة": "استغفر الله",
+        "استغفراللله": "استغفر الله",
+        "سبحانالله": "سبحان الله",
+        "سبحاناللة": "سبحان الله",
+        "سبحاناللله": "سبحان الله",
+        "الحمدلله": "الحمد لله",
+        "الحمدللة": "الحمد لله",
+        "الحمدلللة": "الحمد لله",
+        "اللهأكبر": "الله أكبر",
+        "اللهاكبر": "الله أكبر",
+        "اللةأكبر": "الله أكبر",
+        "اللةاكبر": "الله أكبر",
+        "اللللهاكبر": "الله أكبر"
+    }
+    
+    return tasbih_map.get(text)
+
 # ================= إرسال رسائل تلقائية =================
 def send_random_message_to_all():
     try:
         category = random.choice(["duas", "adhkar", "hadiths", "quran"])
         messages = content.get(category, [])
         if not messages:
-            logger.warning(f"لا يوجد محتوى في الفئة {category}")
+            logger.warning(f"لا يوجد محتوى في {category}")
             return
 
         message = random.choice(messages)
@@ -165,16 +192,17 @@ def scheduled_messages():
         try:
             send_random_message_to_all()
             sleep_time = random.randint(14400, 18000)
-            logger.info(f"الرسالة التلقائية القادمة بعد {sleep_time//3600} ساعة")
+            logger.info(f"الرسالة القادمة بعد {sleep_time//3600} ساعة")
             time.sleep(sleep_time)
         except Exception as e:
-            logger.error(f"خطأ في جدولة الرسائل: {e}")
+            logger.error(f"خطأ في الجدولة: {e}")
             time.sleep(3600)
 
 threading.Thread(target=scheduled_messages, daemon=True).start()
 
 # ================= حماية الروابط =================
 links_count = {}
+
 def handle_links(event, user_id, gid=None):
     try:
         text = event.message.text.strip()
@@ -183,19 +211,30 @@ def handle_links(event, user_id, gid=None):
 
             if links_count[user_id] == 2:
                 display_name = get_group_member_display_name(gid, user_id) if gid else get_user_display_name(user_id)
-                warning_msg = f"{display_name}\nالرجاء عدم تكرار إرسال الروابط"
-                safe_reply_silent_fail(event.reply_token, warning_msg)
-                logger.info(f"تحذير المستخدم {user_id} من تكرار الروابط")
+                warning = f"{display_name}\nالرجاء عدم تكرار إرسال الروابط"
+                safe_reply(event.reply_token, warning)
+                logger.info(f"تحذير {user_id} من الروابط")
                 return True
 
             elif links_count[user_id] >= 3:
-                logger.info(f"تم تجاهل رابط متكرر من المستخدم {user_id}")
+                logger.info(f"تجاهل رابط من {user_id}")
                 return True
 
             return True
     except Exception as e:
         logger.error(f"خطأ في معالجة الروابط: {e}")
     return False
+
+# ================= الرد على السلام =================
+def check_salam(text):
+    salam_list = [
+        "السلام عليكم", "سلام عليكم", "السلام", "سلام",
+        "عليكم السلام", "السلام عليكم ورحمة الله",
+        "السلام عليكم ورحمة الله وبركاته", "سلام عليكم ورحمة الله",
+        "سلامو عليكم", "سلامو", "سلامون عليكم", "سلامن"
+    ]
+    text_lower = text.lower()
+    return any(s in text_lower for s in salam_list)
 
 # ================= معالجة الرسائل =================
 @handler.add(MessageEvent, message=TextMessage)
@@ -205,63 +244,104 @@ def handle_message(event):
         user_id = event.source.user_id
         gid = getattr(event.source, "group_id", None)
 
+        # تسجيل المستخدمين والمجموعات
         if user_id not in target_users:
             target_users.add(user_id)
             save_data()
-            logger.info(f"تم تسجيل مستخدم جديد: {user_id}")
+            logger.info(f"مستخدم جديد: {user_id}")
 
         if gid and gid not in target_groups:
             target_groups.add(gid)
             save_data()
-            logger.info(f"تم تسجيل مجموعة جديدة: {gid}")
+            logger.info(f"مجموعة جديدة: {gid}")
 
         ensure_user_counts(user_id)
 
+        # حماية الروابط
         if handle_links(event, user_id, gid):
             return
 
         text_lower = user_text.lower()
 
+        # الرد على السلام
+        if check_salam(user_text):
+            safe_reply(event.reply_token, "وعليكم السلام ورحمة الله وبركاته")
+            return
+
+        # أمر مساعدة
         if text_lower == "مساعدة":
             try:
                 with open(HELP_FILE, "r", encoding="utf-8") as f:
                     help_text = f.read()
-                safe_reply_silent_fail(event.reply_token, help_text)
-            except Exception as e:
-                logger.error(f"خطأ في تحميل ملف المساعدة: {e}")
+                safe_reply(event.reply_token, help_text)
+            except:
+                logger.error("ملف المساعدة غير موجود")
             return
 
-        # أمر فضل بالتتابع
+        # أمر فضل
         if text_lower == "فضل":
             message = get_next_fadl()
-            safe_reply_silent_fail(event.reply_token, message)
+            safe_reply(event.reply_token, message)
             return
 
-        if user_text in ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]:
-            tasbih_counts[user_id][user_text] += 1
-            save_data()
-            status = get_tasbih_status(user_id, gid)
-            safe_reply_silent_fail(event.reply_token, status)
-            return
-
+        # أمر تسبيح
         if text_lower == "تسبيح":
             status = get_tasbih_status(user_id, gid)
-            safe_reply_silent_fail(event.reply_token, status)
+            safe_reply(event.reply_token, status)
             return
 
+        # معالجة التسبيح بجميع الصيغ
+        normalized = normalize_tasbih_text(user_text)
+        if normalized:
+            counts = tasbih_counts[user_id]
+            
+            # التحقق من الوصول للحد
+            if counts[normalized] >= TASBIH_LIMITS:
+                safe_reply(event.reply_token, f"تم اكتمال {normalized} مسبقا")
+                return
+            
+            counts[normalized] += 1
+            save_data()
+
+            # رسالة اكتمال الذكر
+            if counts[normalized] == TASBIH_LIMITS:
+                safe_reply(event.reply_token, f"تم اكتمال {normalized}")
+                
+                # التحقق من اكتمال جميع الأذكار
+                if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
+                    safe_send_message(user_id, "تم اكتمال الاذكار الاربعه\nجزاك الله خيرا")
+                return
+            
+            # عرض الحالة
+            status = get_tasbih_status(user_id, gid)
+            safe_reply(event.reply_token, status)
+            return
+
+        # أمر ذكرني
         if text_lower == "ذكرني":
             category = random.choice(["duas", "adhkar", "hadiths", "quran"])
             messages = content.get(category, [])
             if not messages:
                 return
+            
             message = random.choice(messages)
-            safe_reply_silent_fail(event.reply_token, message)
+            
+            # الرد للمستخدم
+            safe_reply(event.reply_token, message)
+            
+            # الإرسال لجميع المستخدمين والمجموعات
             for uid in list(target_users):
-                safe_send_message(uid, message)
+                if uid != user_id:
+                    safe_send_message(uid, message)
+            
             for g in list(target_groups):
-                safe_send_message(g, message)
+                if g != gid:
+                    safe_send_message(g, message)
+            
             return
 
+        # تجاهل باقي الرسائل
+        
     except Exception as e:
         logger.error(f"خطأ في معالجة الرسالة: {e}", exc_info=True)
 
@@ -279,7 +359,7 @@ def callback():
     except InvalidSignatureError:
         logger.warning("توقيع غير صالح")
     except Exception as e:
-        logger.error(f"خطأ في معالجة Webhook: {e}")
+        logger.error(f"خطأ في Webhook: {e}")
     return "OK", 200
 
 # ================= تشغيل التطبيق =================
