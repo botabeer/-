@@ -1,5 +1,6 @@
 from flask import Flask, request
-from linebot import LineBotApi, WebhookHandler
+from linebot.v3.webhook import WebhookHandler
+from linebot.v3 import LineBotApi
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import os, random, json, threading, time, logging
@@ -19,8 +20,8 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 PORT = int(os.getenv("PORT", 5000))
 
-line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(LINE_CHANNEL_SECRET)
+line_bot_api = LineBotApi(channel_access_token=LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(channel_secret=LINE_CHANNEL_SECRET)
 
 # ================= ملفات البيانات =================
 DATA_FILE = "data.json"
@@ -197,44 +198,36 @@ def handle_message(event):
         user_id = event.source.user_id
         gid = getattr(event.source, "group_id", None)
 
+        # ================= تسجيل المستخدمين والمجموعات =================
         if user_id not in target_users:
             target_users.add(user_id)
             save_data()
+            logger.info(f"تم تسجيل مستخدم جديد: {user_id}")
 
         if gid and gid not in target_groups:
             target_groups.add(gid)
             save_data()
+            logger.info(f"تم تسجيل مجموعة جديدة: {gid}")
 
         ensure_user_counts(user_id)
 
+        # ================= حماية الروابط =================
         if handle_links(event, user_id, gid):
             return
 
+        # ================= أمر فضل =================
         text_lower = user_text.lower()
-
-        # أمر المساعدة
-        if text_lower == "مساعدة":
-            try:
-                with open(HELP_FILE, "r", encoding="utf-8") as f:
-                    help_text = f.read()
-                safe_reply_silent_fail(event.reply_token, help_text)
-            except:
-                pass
+        if text_lower == "فضل" and fadl_content:
+            safe_reply_silent_fail(event.reply_token, random.choice(fadl_content))
             return
 
-        # أمر فضل
-        if text_lower == "فضل":
-            if fadl_content:
-                safe_reply_silent_fail(event.reply_token, random.choice(fadl_content))
-            return
-
-        # أمر عرض التسبيح
+        # ================= أمر عرض التسبيح =================
         if text_lower == "تسبيح":
             status = get_tasbih_status(user_id, gid)
             safe_reply_silent_fail(event.reply_token, status)
             return
 
-        # التسبيح
+        # ================= التسبيح =================
         clean_text = user_text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
         key_map = {
             "سبحانالله": "سبحان الله",
@@ -252,39 +245,44 @@ def handle_message(event):
         key = key_map.get(clean_text)
         if key:
             counts = tasbih_counts[user_id]
+
             if counts[key] >= 33:
                 safe_reply_silent_fail(event.reply_token, f"تم اكتمال {key} مسبقا")
                 return
+
             counts[key] += 1
             save_data()
+
             if counts[key] == 33:
                 safe_reply_silent_fail(event.reply_token, f"تم اكتمال {key}")
+
                 if all(counts[k] >= 33 for k in ["استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر"]):
-                    safe_send_message(user_id, "تم اكتمال الاذكار الاربعه\nجزاك الله خيرا")
+                    congratulation_msg = "تم اكتمال الاذكار الاربعه\nجزاك الله خيرا"
+                    safe_send_message(user_id, congratulation_msg)
                 return
+
             status = get_tasbih_status(user_id, gid)
             safe_reply_silent_fail(event.reply_token, status)
             return
 
-        # أمر ذكرني محسّن لجميع المستخدمين
+        # ================= أمر ذكرني =================
         if text_lower == "ذكرني":
             category = random.choice(["duas", "adhkar", "hadiths", "quran"])
             messages = content.get(category, [])
             if not messages:
                 return
+
             message = random.choice(messages)
 
             # الرد على من كتب الأمر
             safe_reply_silent_fail(event.reply_token, message)
 
-            # إرسال نفس الذكر لجميع المستخدمين والمجموعات بطريقة منظمة
+            # إرسال نفس الذكر لجميع المستخدمين والمجموعات
             for uid in list(target_users):
                 safe_send_message(uid, message)
 
             for g in list(target_groups):
                 safe_send_message(g, message)
-
-            logger.info(f"تم إرسال الذكر لجميع المستخدمين والمجموعات")
             return
 
     except Exception as e:
