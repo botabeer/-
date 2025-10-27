@@ -122,7 +122,7 @@ def send_random_message_to_all():
         
         logger.info(f"تم إرسال رسالة تلقائية إلى {sent_count} مستخدم/مجموعة")
     except Exception as e:
-        logger.error(f": {e}")
+        logger.error(f"خطأ في إرسال الرسائل التلقائية: {e}")
 
 def scheduled_messages():
     while True:
@@ -132,7 +132,7 @@ def scheduled_messages():
             logger.info(f"الرسالة التلقائية القادمة بعد {sleep_time//3600} ساعة")
             time.sleep(sleep_time)
         except Exception as e:
-            logger.error(f": {e}")
+            logger.error(f"خطأ في جدولة الرسائل: {e}")
             time.sleep(3600)
 
 threading.Thread(target=scheduled_messages, daemon=True).start()
@@ -149,9 +149,9 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        logger.warning("")
+        logger.warning("توقيع غير صالح")
     except Exception as e:
-        logger.error(f" Webhook: {e}")
+        logger.error(f"خطأ في معالجة Webhook: {e}")
     return "OK", 200
 
 # ---------------- حماية الروابط ---------------- #
@@ -177,12 +177,12 @@ def handle_links(event, user_id):
                     line_bot_api.leave_group(gid)
                     logger.info(f"تم طرد المستخدم {user_id} من المجموعة {gid}")
                 except Exception as e:
-                    logger.error(f": {e}")
+                    logger.error(f"فشل طرد المستخدم: {e}")
                 return True
                 
             return True
     except Exception as e:
-        logger.error(f": {e}")
+        logger.error(f"خطأ في معالجة الروابط: {e}")
     return False
 
 # ---------------- تسبيح ---------------- #
@@ -251,7 +251,7 @@ def handle_message(event):
 ذكر الاستغفار، يزيد العداد حتى يصل الى 33 مرة
 
 ذكرني
-الحصول على ذكر او دعاء او حديث او آية بشكل فوري
+الحصول على ذكر او دعاء او حديث او آية بشكل فوري"""
             
             safe_reply_message(event.reply_token, help_text)
             return
