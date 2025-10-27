@@ -1,6 +1,5 @@
 from flask import Flask, request
-from linebot.v3.webhook import WebhookHandler
-from linebot.v3 import LineBotApi
+from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import os, random, json, threading, time, logging
@@ -20,8 +19,8 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 PORT = int(os.getenv("PORT", 5000))
 
-line_bot_api = LineBotApi(channel_access_token=LINE_CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(channel_secret=LINE_CHANNEL_SECRET)
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # ================= ملفات البيانات =================
 DATA_FILE = "data.json"
@@ -35,8 +34,6 @@ def load_fadl_content():
         with open(FADL_FILE, "w", encoding="utf-8") as f:
             json.dump({"fadl": []}, f, ensure_ascii=False, indent=2)
         logger.info(f"{FADL_FILE} لم يكن موجودًا، تم إنشاؤه تلقائيًا")
-        return []
-
     try:
         with open(FADL_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -173,18 +170,15 @@ def handle_links(event, user_id, gid=None):
         text = event.message.text.strip()
         if any(x in text.lower() for x in ["http://", "https://", "www."]):
             links_count[user_id] = links_count.get(user_id, 0) + 1
-
             if links_count[user_id] == 2:
                 display_name = get_group_member_display_name(gid, user_id) if gid else get_user_display_name(user_id)
                 warning_msg = f"{display_name}\nالرجاء عدم تكرار إرسال الروابط"
                 safe_reply_silent_fail(event.reply_token, warning_msg)
                 logger.info(f"تحذير المستخدم {user_id} من تكرار الروابط")
                 return True
-
             elif links_count[user_id] >= 3:
                 logger.info(f"تم تجاهل رابط متكرر من المستخدم {user_id}")
                 return True
-
             return True
     except Exception as e:
         logger.error(f"خطأ في معالجة الروابط: {e}")
@@ -198,92 +192,74 @@ def handle_message(event):
         user_id = event.source.user_id
         gid = getattr(event.source, "group_id", None)
 
-        # ================= تسجيل المستخدمين والمجموعات =================
         if user_id not in target_users:
             target_users.add(user_id)
             save_data()
-            logger.info(f"تم تسجيل مستخدم جديد: {user_id}")
-
         if gid and gid not in target_groups:
             target_groups.add(gid)
             save_data()
-            logger.info(f"تم تسجيل مجموعة جديدة: {gid}")
 
         ensure_user_counts(user_id)
 
-        # ================= حماية الروابط =================
+        # حماية الروابط
         if handle_links(event, user_id, gid):
             return
 
-        # ================= أمر فضل =================
         text_lower = user_text.lower()
-        if text_lower == "فضل" and fadl_content:
-            safe_reply_silent_fail(event.reply_token, random.choice(fadl_content))
+
+        # أمر فضل
+        if text_lower == "فضل":
+            if fadl_content:
+                safe_reply_silent_fail(event.reply_token, random.choice(fadl_content))
+            else:
+                safe_reply_silent_fail(event.reply_token, "لا يوجد محتوى فضل حاليًا.")
             return
 
-        # ================= أمر عرض التسبيح =================
+        # أمر ذكرني
+        if text_lower == "ذكرني":
+            category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+            messages = content.get(category, [])
+            if messages:
+                message = random.choice(messages)
+                safe_reply_silent_fail(event.reply_token, message)
+                for uid in target_users:
+                    safe_send_message(uid, message)
+                for g in target_groups:
+                    safe_send_message(g, message)
+            return
+
+        # أمر التسبيح
         if text_lower == "تسبيح":
             status = get_tasbih_status(user_id, gid)
             safe_reply_silent_fail(event.reply_token, status)
             return
 
-        # ================= التسبيح =================
-        clean_text = user_text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
-        key_map = {
-            "سبحانالله": "سبحان الله",
-            "سبحاناللة": "سبحان الله",
-            "الحمدلله": "الحمد لله",
-            "الحمدللة": "الحمد لله",
-            "اللهأكبر": "الله أكبر",
-            "اللهاكبر": "الله أكبر",
-            "اللةأكبر": "الله أكبر",
-            "اللةاكبر": "الله أكبر",
-            "استغفرالله": "استغفر الله",
-            "استغفراللة": "استغفر الله"
-        }
-
-        key = key_map.get(clean_text)
-        if key:
-            counts = tasbih_counts[user_id]
-
-            if counts[key] >= 33:
-                safe_reply_silent_fail(event.reply_token, f"تم اكتمال {key} مسبقا")
-                return
-
-            counts[key] += 1
+        # إعادة العداد
+        if text_lower == "إعادة":
+            tasbih_counts[user_id] = {"استغفر الله": 0, "سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
             save_data()
-
-            if counts[key] == 33:
-                safe_reply_silent_fail(event.reply_token, f"تم اكتمال {key}")
-
-                if all(counts[k] >= 33 for k in ["استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر"]):
-                    congratulation_msg = "تم اكتمال الاذكار الاربعه\nجزاك الله خيرا"
-                    safe_send_message(user_id, congratulation_msg)
-                return
-
-            status = get_tasbih_status(user_id, gid)
-            safe_reply_silent_fail(event.reply_token, status)
+            safe_reply_silent_fail(event.reply_token, "تم إعادة العداد.")
             return
 
-        # ================= أمر ذكرني =================
-        if text_lower == "ذكرني":
-            category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-            messages = content.get(category, [])
-            if not messages:
-                return
-
-            message = random.choice(messages)
-
-            # الرد على من كتب الأمر
-            safe_reply_silent_fail(event.reply_token, message)
-
-            # إرسال نفس الذكر لجميع المستخدمين والمجموعات
-            for uid in list(target_users):
-                safe_send_message(uid, message)
-
-            for g in list(target_groups):
-                safe_send_message(g, message)
+        # أمر المساعدة
+        if text_lower == "مساعدة":
+            if os.path.exists(HELP_FILE):
+                with open(HELP_FILE, "r", encoding="utf-8") as f:
+                    help_text = f.read()
+                safe_reply_silent_fail(event.reply_token, help_text)
+            else:
+                safe_reply_silent_fail(event.reply_token, "لا يوجد ملف مساعدة حاليًا.")
             return
+
+        # أوامر التسبيح الفردية
+        if user_text in ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]:
+            tasbih_counts[user_id][user_text] += 1
+            save_data()
+            count = tasbih_counts[user_id][user_text]
+            safe_reply_silent_fail(event.reply_token, f"{user_text}: {count}/33")
+            return
+
+        safe_reply_silent_fail(event.reply_token, "الأمر غير معروف. اكتب 'مساعدة' لعرض الأوامر.")
 
     except Exception as e:
         logger.error(f"خطأ في معالجة الرسالة: {e}", exc_info=True)
