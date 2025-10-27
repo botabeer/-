@@ -25,6 +25,8 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 # ---------------- ملفات البيانات ---------------- #
 DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
+HELP_FILE = "help.txt"
+FADL_FILE = "fadl.txt"
 
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -97,6 +99,14 @@ def safe_reply_message(reply_token, message):
         return False
     except Exception as e:
         logger.error(f"خطأ غير متوقع في الرد: {e}")
+        return False
+
+def safe_reply_silent_fail(reply_token, message):
+    """الرد على رسالة بدون تسجيل خطأ (للاستخدام مع الأوامر المعروفة فقط)"""
+    try:
+        line_bot_api.reply_message(reply_token, TextSendMessage(text=message))
+        return True
+    except:
         return False
 
 # ---------------- إرسال ذكر/دعاء تلقائي ---------------- #
@@ -231,29 +241,32 @@ def handle_message(event):
 
         # ---------------- أمر المساعدة ---------------- #
         if user_text_lower == "مساعدة":
-            help_text = """دليل استخدام البوت
-
-الاوامر المتاحة
-
-تسبيح
-عرض حالة التسبيح الحالية وعدد المرات المتبقية لكل ذكر
-
-سبحان الله
-ذكر التسبيح، يزيد العداد حتى يصل الى 33 مرة
-
-الحمد لله
-ذكر الحمد، يزيد العداد حتى يصل الى 33 مرة
-
-الله أكبر
-ذكر التكبير، يزيد العداد حتى يصل الى 33 مرة
-
-استغفر الله
-ذكر الاستغفار، يزيد العداد حتى يصل الى 33 مرة
-
-ذكرني
-الحصول على ذكر او دعاء او حديث او آية بشكل فوري"""
+            try:
+                with open(HELP_FILE, "r", encoding="utf-8") as f:
+                    help_text = f.read()
+            except FileNotFoundError:
+                help_text = "ملف المساعدة غير موجود"
+                logger.error(f"ملف {HELP_FILE} غير موجود")
+            except Exception as e:
+                help_text = "حدث خطأ في تحميل ملف المساعدة"
+                logger.error(f"خطأ في قراءة {HELP_FILE}: {e}")
             
             safe_reply_message(event.reply_token, help_text)
+            return
+
+        # ---------------- أمر فضل ---------------- #
+        if user_text_lower == "فضل":
+            try:
+                with open(FADL_FILE, "r", encoding="utf-8") as f:
+                    fadl_text = f.read()
+            except FileNotFoundError:
+                fadl_text = "ملف الفضل غير موجود"
+                logger.error(f"ملف {FADL_FILE} غير موجود")
+            except Exception as e:
+                fadl_text = "حدث خطأ في تحميل ملف الفضل"
+                logger.error(f"خطأ في قراءة {FADL_FILE}: {e}")
+            
+            safe_reply_message(event.reply_token, fadl_text)
             return
 
         # ---------------- عرض التسبيح ---------------- #
@@ -295,7 +308,7 @@ def handle_message(event):
                 
                 # التحقق من اكتمال جميع الأذكار
                 if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
-                    congratulation_msg = "تم اكتمال جميع الاذكار\n\nجزاك الله خير\nوجعل الله لك ولوالديك الجنة"
+                    congratulation_msg = "تم اكتمال الاذكار الاربعه\nجزاك الله خيرا"
                     safe_send_message(user_id, congratulation_msg)
                 return
             
