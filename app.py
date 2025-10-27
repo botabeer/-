@@ -1,71 +1,65 @@
 from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
+from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import os, random, json, threading, time, logging
 from dotenv import load_dotenv
-import traceback
 
 # ================= إعداد التسجيل =================
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# ================= تحميل البيئة =================
+# ================= إعداد البوت =================
+
 load_dotenv()
+app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 PORT = int(os.getenv("PORT", 5000))
 
-app = Flask(__name__)
-
-try:
-    line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
-    handler = WebhookHandler(LINE_CHANNEL_SECRET)
-except Exception as e:
-    logger.error("خطأ في تهيئة LINE Bot:")
-    traceback.print_exc()
-    raise
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # ================= ملفات البيانات =================
+
 DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
 HELP_FILE = "help.txt"
 FADL_FILE = "fadl.json"
 
-# ================= إنشاء الملفات الناقصة تلقائي =================
-def create_file_if_missing(path, default_content):
-    if not os.path.exists(path):
-        with open(path, "w", encoding="utf-8") as f:
-            if isinstance(default_content, dict):
-                json.dump(default_content, f, ensure_ascii=False, indent=2)
-            else:
-                f.write(default_content)
-        logger.info(f"{path} لم يكن موجودًا، تم إنشاؤه تلقائيًا")
+# ================= تحميل بيانات فضل =================
 
-create_file_if_missing(DATA_FILE, {"users": [], "groups": [], "tasbih": {}})
-create_file_if_missing(FADL_FILE, {"fadl": ["لا إله إلا الله وحده لا شريك له"]})
-create_file_if_missing(CONTENT_FILE, {"duas": ["دعاء مثال"], "adhkar": ["ذكر مثال"], "hadiths": ["حديث مثال"], "quran": ["آية مثال"]})
-create_file_if_missing(HELP_FILE, "أوامر البوت:\n- فضل\n- تسبيح\n- ذكرني\n- مساعدة")
+def load_fadl_content():
+    try:
+        if not os.path.exists(FADL_FILE):
+            with open(FADL_FILE, "w", encoding="utf-8") as f:
+                json.dump({"fadl": []}, f, ensure_ascii=False, indent=2)
+            logger.info(f"{FADL_FILE} لم يكن موجودًا، تم إنشاؤه تلقائيًا")
+        with open(FADL_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("fadl", [])
+    except Exception as e:
+        logger.error(f"خطأ في تحميل {FADL_FILE}: {e}")
+        return []
 
 # ================= تحميل البيانات =================
-def load_json(path):
+
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump({"users": [], "groups": [], "tasbih": {}}, f, ensure_ascii=False, indent=2)
+        return set(), set(), {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return set(data.get("users", [])), set(data.get("groups", [])), data.get("tasbih", {})
     except Exception as e:
-        logger.error(f"خطأ في تحميل {path}: {e}")
-        return {}
-
-data = load_json(DATA_FILE)
-target_users = set(data.get("users", []))
-target_groups = set(data.get("groups", []))
-tasbih_counts = data.get("tasbih", {})
-
-fadl_content = load_json(FADL_FILE).get("fadl", [])
-content = load_json(CONTENT_FILE)
+        logger.error(f"خطأ في تحميل البيانات: {e}")
+        return set(), set(), {}
 
 def save_data():
     try:
@@ -78,7 +72,23 @@ def save_data():
     except Exception as e:
         logger.error(f"خطأ في حفظ البيانات: {e}")
 
+target_users, target_groups, tasbih_counts = load_data()
+fadl_content = load_fadl_content()
+
+# ================= تحميل محتوى الدعاء والأذكار =================
+
+def load_content():
+    try:
+        with open(CONTENT_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"خطأ في تحميل {CONTENT_FILE}: {e}")
+        return {"duas": [], "adhkar": [], "hadiths": [], "quran": []}
+
+content = load_content()
+
 # ================= دوال مساعدة =================
+
 def safe_send_message(target_id, message):
     try:
         line_bot_api.push_message(target_id, TextSendMessage(text=message))
@@ -113,7 +123,7 @@ def ensure_user_counts(uid):
         save_data()
 
 def get_tasbih_status(user_id, gid=None):
-    counts = tasbih_counts.get(user_id, {"استغفر الله": 0, "سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0})
+    counts = tasbih_counts[user_id]
     display_name = get_group_member_display_name(gid, user_id) if gid else get_user_display_name(user_id)
     return (
         f"حالة التسبيح\n{display_name}\n\n"
@@ -124,6 +134,7 @@ def get_tasbih_status(user_id, gid=None):
     )
 
 # ================= إرسال رسائل تلقائية =================
+
 def send_random_message_to_all():
     try:
         category = random.choice(["duas", "adhkar", "hadiths", "quran"])
@@ -158,30 +169,36 @@ def scheduled_messages():
             logger.error(f"خطأ في جدولة الرسائل: {e}")
             time.sleep(3600)
 
+# بدء المؤقت التلقائي
 threading.Thread(target=scheduled_messages, daemon=True).start()
 
 # ================= حماية الروابط =================
+
 links_count = {}
 def handle_links(event, user_id, gid=None):
     try:
         text = event.message.text.strip()
         if any(x in text.lower() for x in ["http://", "https://", "www."]):
             links_count[user_id] = links_count.get(user_id, 0) + 1
+
             if links_count[user_id] == 2:
                 display_name = get_group_member_display_name(gid, user_id) if gid else get_user_display_name(user_id)
                 warning_msg = f"{display_name}\nالرجاء عدم تكرار إرسال الروابط"
                 safe_reply_silent_fail(event.reply_token, warning_msg)
                 logger.info(f"تحذير المستخدم {user_id} من تكرار الروابط")
                 return True
+
             elif links_count[user_id] >= 3:
                 logger.info(f"تم تجاهل رابط متكرر من المستخدم {user_id}")
                 return True
+
             return True
     except Exception as e:
         logger.error(f"خطأ في معالجة الروابط: {e}")
     return False
 
 # ================= معالجة الرسائل =================
+
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     try:
@@ -189,37 +206,71 @@ def handle_message(event):
         user_id = event.source.user_id
         gid = getattr(event.source, "group_id", None)
 
-        # تسجيل المستخدم/المجموعة تلقائي
-        target_users.add(user_id)
-        if gid:
+        # تسجيل المستخدمين والمجموعات
+        if user_id not in target_users:
+            target_users.add(user_id)
+            save_data()
+            logger.info(f"تم تسجيل مستخدم جديد: {user_id}")
+
+        if gid and gid not in target_groups:
             target_groups.add(gid)
-        save_data()
+            save_data()
+            logger.info(f"تم تسجيل مجموعة جديدة: {gid}")
 
         ensure_user_counts(user_id)
 
-        # أوامر البوت
-        if user_text == "تسبيح":
-            msg = get_tasbih_status(user_id, gid)
-            safe_reply_silent_fail(event.reply_token, msg)
-        elif user_text == "فضل":
-            fadl_msg = "\n".join(fadl_content)
-            safe_reply_silent_fail(event.reply_token, fadl_msg)
-        elif user_text == "ذكرني":
-            send_random_message_to_all()
-            safe_reply_silent_fail(event.reply_token, "تم إرسال ذكر عشوائي لجميع المستخدمين/المجموعات")
-        elif user_text.lower() == "مساعدة":
-            with open(HELP_FILE, "r", encoding="utf-8") as f:
-                help_text = f.read()
-            safe_reply_silent_fail(event.reply_token, help_text)
-        elif handle_links(event, user_id, gid):
-            pass
-        else:
-            safe_reply_silent_fail(event.reply_token, "الأمر غير معروف. اكتب 'مساعدة' للاطلاع على الأوامر.")
+        # حماية الروابط
+        if handle_links(event, user_id, gid):
+            return
+
+        text_lower = user_text.lower()
+
+        # أمر فضل
+        if text_lower == "فضل":
+            if fadl_content:
+                safe_reply_silent_fail(event.reply_token, random.choice(fadl_content))
+            return
+
+        # التسبيح لكل العبارات مع إرسال الحالة كاملة
+        if user_text in ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]:
+            tasbih_counts[user_id][user_text] += 1
+            save_data()
+            status = get_tasbih_status(user_id, gid)
+            safe_reply_silent_fail(event.reply_token, status)
+            return
+
+        # أمر عرض التسبيح
+        if text_lower == "تسبيح":
+            status = get_tasbih_status(user_id, gid)
+            safe_reply_silent_fail(event.reply_token, status)
+            return
+
+        # أمر ذكرني
+        if text_lower == "ذكرني":
+            category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+            messages = content.get(category, [])
+            if not messages:
+                return
+
+            message = random.choice(messages)
+
+            # الرد على من كتب الأمر
+            safe_reply_silent_fail(event.reply_token, message)
+
+            # إرسال نفس الذكر لجميع المستخدمين والمجموعات
+            for uid in list(target_users):
+                safe_send_message(uid, message)
+
+            for g in list(target_groups):
+                safe_send_message(g, message)
+
+            return
+
     except Exception as e:
-        logger.error(f"خطأ في معالجة الرسالة: {e}")
-        traceback.print_exc()
+        logger.error(f"خطأ في معالجة الرسالة: {e}", exc_info=True)
 
 # ================= Webhook =================
+
 @app.route("/", methods=["GET"])
 def home():
     return "Bot is running", 200
@@ -234,10 +285,10 @@ def callback():
         logger.warning("توقيع غير صالح")
     except Exception as e:
         logger.error(f"خطأ في معالجة Webhook: {e}")
-        traceback.print_exc()
     return "OK", 200
 
 # ================= تشغيل التطبيق =================
+
 if __name__ == "__main__":
     logger.info(f"تشغيل البوت على المنفذ {PORT}")
     app.run(host="0.0.0.0", port=PORT)
