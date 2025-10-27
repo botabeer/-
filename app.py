@@ -47,7 +47,6 @@ def load_data():
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(initial_data, f, ensure_ascii=False, indent=2)
         return set(), set(), {}
-
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -74,7 +73,6 @@ def save_data():
 target_users, target_groups, tasbih_counts = load_data()
 fadl_content = load_fadl_content()
 
-# –––––––– تحميل المحتوى ––––––––
 def load_content():
     try:
         with open(CONTENT_FILE, "r", encoding="utf-8") as f:
@@ -88,7 +86,7 @@ def load_content():
 
 content = load_content()
 
-# –––––––– دوال إرسال رسائل آمنة ––––––––
+# –––––––– دوال إرسال رسائل ––––––––
 def safe_send_message(target_id, message):
     try:
         line_bot_api.push_message(target_id, TextSendMessage(text=message))
@@ -100,27 +98,7 @@ def safe_send_message(target_id, message):
         logger.error(f"خطأ غير متوقع في إرسال رسالة: {e}")
         return False
 
-def safe_reply_message(reply_token, message):
-    try:
-        line_bot_api.reply_message(reply_token, TextSendMessage(text=message))
-        return True
-    except LineBotApiError as e:
-        logger.warning(f"فشل الرد على الرسالة: {e}")
-        return False
-    except Exception as e:
-        logger.error(f"خطأ غير متوقع في الرد: {e}")
-        return False
-
-def safe_reply_silent_fail(reply_token, message):
-    """الرد على رسالة بدون تسجيل خطأ (للاستخدام مع الأوامر المعروفة فقط)"""
-    try:
-        line_bot_api.reply_message(reply_token, TextSendMessage(text=message))
-        return True
-    except:
-        return False
-
 def get_user_display_name(user_id):
-    """الحصول على اسم المستخدم"""
     try:
         profile = line_bot_api.get_profile(user_id)
         return profile.display_name
@@ -128,30 +106,32 @@ def get_user_display_name(user_id):
         return "المستخدم"
 
 def get_group_member_display_name(group_id, user_id):
-    """الحصول على اسم العضو في المجموعة"""
     try:
         profile = line_bot_api.get_group_member_profile(group_id, user_id)
         return profile.display_name
     except:
         return "المستخدم"
 
-# –––––––– إرسال رسالة عشوائية لجميع المستخدمين ––––––––
+def safe_reply_silent_fail(reply_token, message):
+    try:
+        line_bot_api.reply_message(reply_token, TextSendMessage(text=message))
+        return True
+    except:
+        return False
+
+# –––––––– إرسال رسائل تلقائية ––––––––
 def send_random_message_to_all():
     try:
         category = random.choice(["duas", "adhkar", "hadiths", "quran"])
         messages = content.get(category, [])
         if not messages:
-            logger.warning(f"لا يوجد محتوى في الفئة {category}")
             return
         message = random.choice(messages)
-        sent_count = 0
         for uid in list(target_users):
-            if safe_send_message(uid, message):
-                sent_count += 1
+            safe_send_message(uid, message)
         for gid in list(target_groups):
-            if safe_send_message(gid, message):
-                sent_count += 1
-        logger.info(f"تم إرسال رسالة تلقائية إلى {sent_count} مستخدم/مجموعة")
+            safe_send_message(gid, message)
+        logger.info(f"تم إرسال رسالة تلقائية من نوع {category}")
     except Exception as e:
         logger.error(f"خطأ في إرسال الرسائل التلقائية: {e}")
 
@@ -159,7 +139,7 @@ def scheduled_messages():
     while True:
         try:
             send_random_message_to_all()
-            sleep_time = random.randint(14400, 18000)  # 4-5 ساعات
+            sleep_time = random.randint(14400, 18000)  # بين 4 و 5 ساعات
             logger.info(f"الرسالة التلقائية القادمة بعد {sleep_time//3600} ساعة")
             time.sleep(sleep_time)
         except Exception as e:
@@ -194,19 +174,13 @@ def handle_links(event, user_id, gid=None):
             links_count[user_id] = links_count.get(user_id, 0) + 1
             if links_count[user_id] == 2:
                 display_name = get_group_member_display_name(gid, user_id) if gid else get_user_display_name(user_id)
-                warning_msg = f"{display_name}\nالرجاء عدم تكرار إرسال الروابط"
-                safe_reply_silent_fail(event.reply_token, warning_msg)
-                logger.info(f"تحذير المستخدم {user_id} من تكرار الروابط")
-                return True
-            elif links_count[user_id] >= 3:
-                logger.info(f"تم تجاهل رابط متكرر من المستخدم {user_id}")
-                return True
+                safe_reply_silent_fail(event.reply_token, f"{display_name}\nالرجاء عدم تكرار إرسال الروابط")
             return True
     except Exception as e:
         logger.error(f"خطأ في معالجة الروابط: {e}")
     return False
 
-# –––––––– التسبيح ––––––––
+# –––––––– تسبيح ––––––––
 TASBIH_LIMITS = 33
 TASBIH_KEYS = ["استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر"]
 
@@ -216,13 +190,11 @@ def ensure_user_counts(uid):
         save_data()
 
 def get_tasbih_status(user_id, gid=None):
-    counts = tasbih_counts[user_id]
+    counts = tasbih_counts.get(user_id, {key:0 for key in TASBIH_KEYS})
     display_name = get_group_member_display_name(gid, user_id) if gid else get_user_display_name(user_id)
     status = f"حالة التسبيح\n{display_name}\n\n"
-    status += f"استغفر الله: {counts['استغفر الله']}/33\n"
-    status += f"سبحان الله: {counts['سبحان الله']}/33\n"
-    status += f"الحمد لله: {counts['الحمد لله']}/33\n"
-    status += f"الله أكبر: {counts['الله أكبر']}/33"
+    for key in TASBIH_KEYS:
+        status += f"{key}: {counts[key]}/33\n"
     return status
 
 # –––––––– معالجة الرسائل ––––––––
@@ -236,11 +208,10 @@ def handle_message(event):
         # تسجيل المستخدمين والمجموعات
         if user_id not in target_users:
             target_users.add(user_id)
-            logger.info(f"مستخدم جديد: {user_id}")
+            save_data()
         if gid and gid not in target_groups:
             target_groups.add(gid)
-            logger.info(f"مجموعة جديدة: {gid}")
-        save_data()
+            save_data()
         ensure_user_counts(user_id)
 
         # حماية الروابط
@@ -250,20 +221,15 @@ def handle_message(event):
         user_text_lower = user_text.lower()
 
         # الرد على السلام
-        salam_variations = [
-            "السلام عليكم", "سلام عليكم", "السلام", "سلام",
-            "عليكم السلام", "السلام عليكم ورحمة الله",
-            "السلام عليكم ورحمة الله وبركاته", "سلام عليكم ورحمة الله",
-            "سلامو عليكم", "سلامو", "سلامون عليكم"
-        ]
-        if any(greeting in user_text_lower for greeting in salam_variations):
+        salam_variations = ["السلام عليكم","سلام عليكم","السلام","سلام","عليكم السلام"]
+        if any(g in user_text_lower for g in salam_variations):
             safe_reply_silent_fail(event.reply_token, "وعليكم السلام ورحمة الله وبركاته")
             return
 
         # أمر المساعدة
         if user_text_lower == "مساعدة":
             try:
-                with open(HELP_FILE, "r", encoding="utf-8") as f:
+                with open(HELP_FILE,"r",encoding="utf-8") as f:
                     help_text = f.read()
                 safe_reply_silent_fail(event.reply_token, help_text)
             except:
@@ -273,44 +239,11 @@ def handle_message(event):
         # أمر فضل
         if user_text_lower == "فضل":
             if fadl_content:
-                fadl_text = random.choice(fadl_content)
-                safe_reply_silent_fail(event.reply_token, fadl_text)
+                safe_reply_silent_fail(event.reply_token, random.choice(fadl_content))
             return
 
-        # أمر عرض التسبيح
+        # أمر التسبيح
         if user_text_lower == "تسبيح":
-            status = get_tasbih_status(user_id, gid)
-            safe_reply_silent_fail(event.reply_token, status)
-            return
-
-        # التسبيح
-        clean_text = user_text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا")
-        key_map = {
-            "سبحانالله": "سبحان الله",
-            "سبحاناللة": "سبحان الله",
-            "الحمدلله": "الحمد لله",
-            "الحمدللة": "الحمد لله",
-            "اللهأكبر": "الله أكبر",
-            "اللهاكبر": "الله أكبر",
-            "اللةأكبر": "الله أكبر",
-            "اللةاكبر": "الله أكبر",
-            "استغفرالله": "استغفر الله",
-            "استغفراللة": "استغفر الله"
-        }
-        key = key_map.get(clean_text)
-        if key:
-            counts = tasbih_counts[user_id]
-            if counts[key] >= TASBIH_LIMITS:
-                safe_reply_silent_fail(event.reply_token, f"تم اكتمال {key} مسبقا")
-                return
-            counts[key] += 1
-            save_data()
-            if counts[key] == TASBIH_LIMITS:
-                safe_reply_silent_fail(event.reply_token, f"تم اكتمال {key}")
-                if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
-                    congratulation_msg = "تم اكتمال الاذكار الاربعه\nجزاك الله خيرا"
-                    safe_send_message(user_id, congratulation_msg)
-                return
             status = get_tasbih_status(user_id, gid)
             safe_reply_silent_fail(event.reply_token, status)
             return
@@ -319,16 +252,15 @@ def handle_message(event):
         if user_text_lower == "ذكرني":
             category = random.choice(["duas", "adhkar", "hadiths", "quran"])
             messages = content.get(category, [])
-            if not messages:
-                return
-            message = random.choice(messages)
-            safe_reply_silent_fail(event.reply_token, message)
-            for uid in list(target_users):
-                if uid != user_id:
-                    safe_send_message(uid, message)
-            for g in list(target_groups):
-                if g != gid:
-                    safe_send_message(g, message)
+            if messages:
+                msg = random.choice(messages)
+                safe_reply_silent_fail(event.reply_token, msg)
+                for uid in target_users:
+                    if uid != user_id:
+                        safe_send_message(uid, msg)
+                for g in target_groups:
+                    if g != gid:
+                        safe_send_message(g, msg)
             return
 
     except Exception as e:
