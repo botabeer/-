@@ -230,7 +230,7 @@ def handle_links(event, user_id, gid=None):
 
 # ---------------- تسبيح ---------------- #
 TASBIH_LIMITS = 33
-TASBIH_KEYS = ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]
+TASBIH_KEYS = ["استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر"]
 
 def ensure_user_counts(uid):
     if uid not in tasbih_counts:
@@ -248,10 +248,10 @@ def get_tasbih_status(user_id, gid=None):
         display_name = get_user_display_name(user_id)
     
     status = f"حالة التسبيح\n{display_name}\n\n"
+    status += f"استغفر الله: {counts['استغفر الله']}/33\n"
     status += f"سبحان الله: {counts['سبحان الله']}/33\n"
     status += f"الحمد لله: {counts['الحمد لله']}/33\n"
-    status += f"الله أكبر: {counts['الله أكبر']}/33\n"
-    status += f"استغفر الله: {counts['استغفر الله']}/33"
+    status += f"الله أكبر: {counts['الله أكبر']}/33"
     return status
 
 # ---------------- معالجة الرسائل ---------------- #
