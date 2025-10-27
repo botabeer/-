@@ -1,7 +1,7 @@
 from flask import Flask, request
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError, LineBotApiError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from linebot.v3.messaging import MessagingApi
+from linebot.exceptions import LineBotApiError
+from linebot.models import MessageEvent, TextMessage
 import os, random, json, threading, time, logging
 from dotenv import load_dotenv
 
@@ -16,11 +16,9 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 PORT = int(os.getenv("PORT", 5000))
 
-line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(LINE_CHANNEL_SECRET)
+messaging_api = MessagingApi(channel_access_token=LINE_CHANNEL_ACCESS_TOKEN)
 
 # ================= ملفات البيانات =================
 DATA_FILE = "data.json"
@@ -32,7 +30,7 @@ FADL_FILE = "fadl.json"
 def load_fadl_content():
     if not os.path.exists(FADL_FILE):
         with open(FADL_FILE, "w", encoding="utf-8") as f:
-            json.dump({"fadl": []}, f, ensure_ascii=False, indent=2)
+            json.dump({"fadl": ["لا يوجد فضل بعد الآن"]}, f, ensure_ascii=False, indent=2)
         logger.info(f"{FADL_FILE} لم يكن موجودًا، تم إنشاؤه تلقائيًا")
     try:
         with open(FADL_FILE, "r", encoding="utf-8") as f:
@@ -84,30 +82,32 @@ content = load_content()
 # ================= دوال مساعدة =================
 def safe_send_message(target_id, message):
     try:
-        line_bot_api.push_message(target_id, TextSendMessage(text=message))
+        messaging_api.push_message(to=target_id, messages=[{"type": "text", "text": message}])
         return True
-    except:
+    except LineBotApiError as e:
+        logger.error(f"خطأ في إرسال الرسالة: {e}")
         return False
 
 def safe_reply_silent_fail(reply_token, message):
     try:
-        line_bot_api.reply_message(reply_token, TextSendMessage(text=message))
+        messaging_api.reply_message(reply_token=reply_token, messages=[{"type": "text", "text": message}])
         return True
-    except:
+    except LineBotApiError as e:
+        logger.error(f"خطأ في الرد: {e}")
         return False
 
 def get_user_display_name(user_id):
     try:
-        profile = line_bot_api.get_profile(user_id)
+        profile = messaging_api.get_profile(user_id)
         return profile.display_name
-    except:
+    except LineBotApiError:
         return "المستخدم"
 
 def get_group_member_display_name(group_id, user_id):
     try:
-        profile = line_bot_api.get_group_member_profile(group_id, user_id)
+        profile = messaging_api.get_group_member_profile(group_id, user_id)
         return profile.display_name
-    except:
+    except LineBotApiError:
         return "المستخدم"
 
 def ensure_user_counts(uid):
@@ -185,101 +185,59 @@ def handle_links(event, user_id, gid=None):
     return False
 
 # ================= معالجة الرسائل =================
-@handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
+@app.route("/callback", methods=["POST"])
+def callback():
     try:
-        user_text = event.message.text.strip()
-        user_id = event.source.user_id
-        gid = getattr(event.source, "group_id", None)
+        body = request.get_data(as_text=True)
+        events = json.loads(body).get("events", [])
+        for event in events:
+            if event["type"] == "message" and event["message"]["type"] == "text":
+                user_id = event["source"]["userId"]
+                gid = event["source"].get("groupId")
+                user_text = event["message"]["text"].strip()
 
-        if user_id not in target_users:
-            target_users.add(user_id)
-            save_data()
-        if gid and gid not in target_groups:
-            target_groups.add(gid)
-            save_data()
+                if user_id not in target_users:
+                    target_users.add(user_id)
+                    save_data()
 
-        ensure_user_counts(user_id)
+                if gid and gid not in target_groups:
+                    target_groups.add(gid)
+                    save_data()
 
-        # حماية الروابط
-        if handle_links(event, user_id, gid):
-            return
+                ensure_user_counts(user_id)
+                if handle_links(event, user_id, gid):
+                    continue
 
-        text_lower = user_text.lower()
+                text_lower = user_text.lower()
 
-        # أمر فضل
-        if text_lower == "فضل":
-            if fadl_content:
-                safe_reply_silent_fail(event.reply_token, random.choice(fadl_content))
-            else:
-                safe_reply_silent_fail(event.reply_token, "لا يوجد محتوى فضل حاليًا.")
-            return
+                if text_lower == "فضل" and fadl_content:
+                    safe_reply_silent_fail(event["replyToken"], random.choice(fadl_content))
+                    continue
 
-        # أمر ذكرني
-        if text_lower == "ذكرني":
-            category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-            messages = content.get(category, [])
-            if messages:
-                message = random.choice(messages)
-                safe_reply_silent_fail(event.reply_token, message)
-                for uid in target_users:
-                    safe_send_message(uid, message)
-                for g in target_groups:
-                    safe_send_message(g, message)
-            return
+                if text_lower == "تسبيح":
+                    status = get_tasbih_status(user_id, gid)
+                    safe_reply_silent_fail(event["replyToken"], status)
+                    continue
 
-        # أمر التسبيح
-        if text_lower == "تسبيح":
-            status = get_tasbih_status(user_id, gid)
-            safe_reply_silent_fail(event.reply_token, status)
-            return
-
-        # إعادة العداد
-        if text_lower == "إعادة":
-            tasbih_counts[user_id] = {"استغفر الله": 0, "سبحان الله": 0, "الحمد لله": 0, "الله أكبر": 0}
-            save_data()
-            safe_reply_silent_fail(event.reply_token, "تم إعادة العداد.")
-            return
-
-        # أمر المساعدة
-        if text_lower == "مساعدة":
-            if os.path.exists(HELP_FILE):
-                with open(HELP_FILE, "r", encoding="utf-8") as f:
-                    help_text = f.read()
-                safe_reply_silent_fail(event.reply_token, help_text)
-            else:
-                safe_reply_silent_fail(event.reply_token, "لا يوجد ملف مساعدة حاليًا.")
-            return
-
-        # أوامر التسبيح الفردية
-        if user_text in ["سبحان الله", "الحمد لله", "الله أكبر", "استغفر الله"]:
-            tasbih_counts[user_id][user_text] += 1
-            save_data()
-            count = tasbih_counts[user_id][user_text]
-            safe_reply_silent_fail(event.reply_token, f"{user_text}: {count}/33")
-            return
-
-        safe_reply_silent_fail(event.reply_token, "الأمر غير معروف. اكتب 'مساعدة' لعرض الأوامر.")
+                if text_lower == "ذكرني":
+                    category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+                    messages = content.get(category, [])
+                    if messages:
+                        message = random.choice(messages)
+                        safe_reply_silent_fail(event["replyToken"], message)
+                        for uid in target_users:
+                            safe_send_message(uid, message)
+                        for g in target_groups:
+                            safe_send_message(g, message)
+                    continue
 
     except Exception as e:
-        logger.error(f"خطأ في معالجة الرسالة: {e}", exc_info=True)
+        logger.error(f"خطأ في معالجة الرسائل: {e}")
 
-# ================= Webhook =================
+# ================= Web =================
 @app.route("/", methods=["GET"])
 def home():
     return "Bot is running", 200
-
-@app.route("/callback", methods=["POST"])
-def callback():
-    signature = request.headers.get("X-Line-Signature", "")
-    body = request.get_data(as_text=True)
-    try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        logger.warning("توقيع غير صالح")
-    except Exception as e:
-        logger.error(f"خطأ في معالجة Webhook: {e}")
-    return "OK", 200
 
 # ================= تشغيل التطبيق =================
 if __name__ == "__main__":
