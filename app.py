@@ -307,9 +307,9 @@ def handle_message(event):
             if counts[normalized] == TASBIH_LIMITS:
                 safe_reply(event.reply_token, f"تم اكتمال {normalized}")
                 
-                # التحقق من اكتمال جميع الأذكار
+                # التحقق من اكتمال جميع الأذكار الأربعة
                 if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
-                    safe_send_message(user_id, "تم اكتمال الاذكار الاربعه\nجزاك الله خيرا")
+                    safe_send_message(user_id, "تم اكتمال الأذكار الأربعة، جزاك الله خيرًا")
                 return
             
             # عرض الحالة
