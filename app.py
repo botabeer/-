@@ -26,14 +26,14 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
 HELP_FILE = "help.txt"
-FADL_FILE = "fadl.txt"
+FADL_FILE = "fadl.json"
 
 def load_fadl_content():
     """تحميل محتوى فضل العبادات"""
     try:
         with open(FADL_FILE, "r", encoding="utf-8") as f:
-            lines = [line.strip() for line in f.readlines() if line.strip()]
-            return lines
+            data = json.load(f)
+            return data.get("fadl", [])
     except FileNotFoundError:
         logger.error(f"ملف {FADL_FILE} غير موجود")
         return []
