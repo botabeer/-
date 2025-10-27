@@ -28,6 +28,19 @@ CONTENT_FILE = "content.json"
 HELP_FILE = "help.txt"
 FADL_FILE = "fadl.txt"
 
+def load_fadl_content():
+    """تحميل محتوى فضل العبادات"""
+    try:
+        with open(FADL_FILE, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f.readlines() if line.strip()]
+            return lines
+    except FileNotFoundError:
+        logger.error(f"ملف {FADL_FILE} غير موجود")
+        return []
+    except Exception as e:
+        logger.error(f"خطأ في تحميل {FADL_FILE}: {e}")
+        return []
+
 def load_data():
     if not os.path.exists(DATA_FILE):
         initial_data = {
@@ -63,6 +76,7 @@ def save_data():
         logger.error(f"خطأ في حفظ البيانات: {e}")
 
 target_users, target_groups, tasbih_counts = load_data()
+fadl_content = load_fadl_content()
 
 # ---------------- تحميل المحتوى ---------------- #
 def load_content():
@@ -89,6 +103,22 @@ def safe_send_message(target_id, message):
     except Exception as e:
         logger.error(f"خطأ غير متوقع في إرسال رسالة: {e}")
         return False
+
+def get_user_display_name(user_id):
+    """الحصول على اسم المستخدم"""
+    try:
+        profile = line_bot_api.get_profile(user_id)
+        return profile.display_name
+    except:
+        return "المستخدم"
+
+def get_group_member_display_name(group_id, user_id):
+    """الحصول على اسم العضو في المجموعة"""
+    try:
+        profile = line_bot_api.get_group_member_profile(group_id, user_id)
+        return profile.display_name
+    except:
+        return "المستخدم"
 
 def safe_reply_message(reply_token, message):
     try:
@@ -166,19 +196,22 @@ def callback():
 
 # ---------------- حماية الروابط ---------------- #
 links_count = {}
-def handle_links(event, user_id):
+def handle_links(event, user_id, gid=None):
     try:
         text = event.message.text.strip()
-        gid = getattr(event.source, 'group_id', None)
         
         if any(x in text.lower() for x in ["http://", "https://", "www."]):
             links_count[user_id] = links_count.get(user_id, 0) + 1
             
             if links_count[user_id] == 2:
-                safe_reply_message(
-                    event.reply_token,
-                    "الرجاء عدم تكرار إرسال الروابط"
-                )
+                # الحصول على اسم المستخدم
+                if gid:
+                    display_name = get_group_member_display_name(gid, user_id)
+                else:
+                    display_name = get_user_display_name(user_id)
+                
+                warning_msg = f"{display_name}\nالرجاء عدم تكرار إرسال الروابط"
+                safe_reply_silent_fail(event.reply_token, warning_msg)
                 logger.info(f"تحذير المستخدم {user_id} من تكرار الروابط")
                 return True
             
@@ -204,9 +237,17 @@ def ensure_user_counts(uid):
         tasbih_counts[uid] = {key: 0 for key in TASBIH_KEYS}
         save_data()
 
-def get_tasbih_status(user_id):
+def get_tasbih_status(user_id, gid=None):
+    """الحصول على حالة التسبيح مع اسم المستخدم"""
     counts = tasbih_counts[user_id]
-    status = "حالة التسبيح\n\n"
+    
+    # الحصول على اسم المستخدم
+    if gid:
+        display_name = get_group_member_display_name(gid, user_id)
+    else:
+        display_name = get_user_display_name(user_id)
+    
+    status = f"حالة التسبيح\n{display_name}\n\n"
     status += f"سبحان الله: {counts['سبحان الله']}/33\n"
     status += f"الحمد لله: {counts['الحمد لله']}/33\n"
     status += f"الله أكبر: {counts['الله أكبر']}/33\n"
@@ -234,63 +275,78 @@ def handle_message(event):
         ensure_user_counts(user_id)
 
         # حماية الروابط
-        if handle_links(event, user_id):
+        if handle_links(event, user_id, gid):
             return
 
         user_text_lower = user_text.lower()
+
+        # ---------------- الرد على السلام ---------------- #
+        salam_variations = [
+            "السلام عليكم", "سلام عليكم", "السلام", "سلام",
+            "عليكم السلام", "السلام عليكم ورحمة الله",
+            "السلام عليكم ورحمة الله وبركاته", "سلام عليكم ورحمة الله",
+            "سلامو عليكم", "سلامو", "سلامون عليكم"
+        ]
+        
+        if any(greeting in user_text_lower for greeting in salam_variations):
+            safe_reply_silent_fail(event.reply_token, "وعليكم السلام ورحمة الله وبركاته")
+            return
 
         # ---------------- أمر المساعدة ---------------- #
         if user_text_lower == "مساعدة":
             try:
                 with open(HELP_FILE, "r", encoding="utf-8") as f:
                     help_text = f.read()
-            except FileNotFoundError:
-                help_text = "ملف المساعدة غير موجود"
-                logger.error(f"ملف {HELP_FILE} غير موجود")
-            except Exception as e:
-                help_text = "حدث خطأ في تحميل ملف المساعدة"
-                logger.error(f"خطأ في قراءة {HELP_FILE}: {e}")
-            
-            safe_reply_message(event.reply_token, help_text)
+                safe_reply_silent_fail(event.reply_token, help_text)
+            except:
+                pass
             return
 
         # ---------------- أمر فضل ---------------- #
         if user_text_lower == "فضل":
-            try:
-                with open(FADL_FILE, "r", encoding="utf-8") as f:
-                    fadl_text = f.read()
-            except FileNotFoundError:
-                fadl_text = "ملف الفضل غير موجود"
-                logger.error(f"ملف {FADL_FILE} غير موجود")
-            except Exception as e:
-                fadl_text = "حدث خطأ في تحميل ملف الفضل"
-                logger.error(f"خطأ في قراءة {FADL_FILE}: {e}")
-            
-            safe_reply_message(event.reply_token, fadl_text)
+            if fadl_content:
+                fadl_text = random.choice(fadl_content)
+                safe_reply_silent_fail(event.reply_token, fadl_text)
             return
 
         # ---------------- عرض التسبيح ---------------- #
         if user_text_lower == "تسبيح":
-            status = get_tasbih_status(user_id)
-            safe_reply_message(event.reply_token, status)
+            status = get_tasbih_status(user_id, gid)
+            safe_reply_silent_fail(event.reply_token, status)
             return
 
         # ---------------- التسبيح ---------------- #
-        clean_text = user_text.replace(" ", "")
+        clean_text = user_text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا")
         key_map = {
             "سبحانالله": "سبحان الله",
+            "سبحاناللة": "سبحان الله",
             "الحمدلله": "الحمد لله",
+            "الحمدللة": "الحمد لله",
             "اللهأكبر": "الله أكبر",
-            "استغفرالله": "استغفر الله"
+            "اللهاكبر": "الله أكبر",
+            "اللةأكبر": "الله أكبر",
+            "اللةاكبر": "الله أكبر",
+            "استغفرالله": "استغفر الله",
+            "استغفراللة": "استغفر الله",
+            "اللهاكبر": "الله أكبر"
         }
+        
+        # التحقق من جميع الصيغ الممكنة
         key = key_map.get(clean_text)
+        
+        # إذا لم يجد تطابق، جرب بدون همزات
+        if not key:
+            for variant, standard in key_map.items():
+                if clean_text == variant:
+                    key = standard
+                    break
         
         if key:
             counts = tasbih_counts[user_id]
             
             # التحقق إذا الذكر وصل الحد الأقصى
             if counts[key] >= TASBIH_LIMITS:
-                safe_reply_message(
+                safe_reply_silent_fail(
                     event.reply_token,
                     f"تم اكتمال {key} مسبقا"
                 )
@@ -301,7 +357,7 @@ def handle_message(event):
 
             # إشعار اكتمال ذكر واحد فقط
             if counts[key] == TASBIH_LIMITS:
-                safe_reply_message(
+                safe_reply_silent_fail(
                     event.reply_token,
                     f"تم اكتمال {key}"
                 )
@@ -313,8 +369,8 @@ def handle_message(event):
                 return
             
             # عرض الحالة الحالية
-            status = get_tasbih_status(user_id)
-            safe_reply_message(event.reply_token, status)
+            status = get_tasbih_status(user_id, gid)
+            safe_reply_silent_fail(event.reply_token, status)
             return
 
         # ---------------- أمر ذكرني ---------------- #
@@ -328,9 +384,9 @@ def handle_message(event):
             message = random.choice(messages)
             
             # إرسال للمستخدم الذي طلب الأمر
-            safe_reply_message(event.reply_token, message)
+            safe_reply_silent_fail(event.reply_token, message)
             
-            # إرسال لجميع المستخدمين والمجموعات
+            # إرسال لجميع المستخدمين والمجموعات الآخرين
             for uid in list(target_users):
                 if uid != user_id:
                     safe_send_message(uid, message)
