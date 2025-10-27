@@ -6,7 +6,6 @@ import os, random, json, threading, time, logging
 from dotenv import load_dotenv
 
 # ================= إعداد التسجيل =================
-
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -14,7 +13,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ================= إعداد البوت =================
-
 load_dotenv()
 app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
@@ -25,14 +23,12 @@ line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # ================= ملفات البيانات =================
-
 DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
 HELP_FILE = "help.txt"
 FADL_FILE = "fadl.json"
 
 # ================= تحميل بيانات فضل =================
-
 def load_fadl_content():
     try:
         if not os.path.exists(FADL_FILE):
@@ -47,7 +43,6 @@ def load_fadl_content():
         return []
 
 # ================= تحميل البيانات =================
-
 def load_data():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -76,7 +71,6 @@ target_users, target_groups, tasbih_counts = load_data()
 fadl_content = load_fadl_content()
 
 # ================= تحميل محتوى الدعاء والأذكار =================
-
 def load_content():
     try:
         with open(CONTENT_FILE, "r", encoding="utf-8") as f:
@@ -88,7 +82,6 @@ def load_content():
 content = load_content()
 
 # ================= دوال مساعدة =================
-
 def safe_send_message(target_id, message):
     try:
         line_bot_api.push_message(target_id, TextSendMessage(text=message))
@@ -134,7 +127,6 @@ def get_tasbih_status(user_id, gid=None):
     )
 
 # ================= إرسال رسائل تلقائية =================
-
 def send_random_message_to_all():
     try:
         category = random.choice(["duas", "adhkar", "hadiths", "quran"])
@@ -169,11 +161,9 @@ def scheduled_messages():
             logger.error(f"خطأ في جدولة الرسائل: {e}")
             time.sleep(3600)
 
-# بدء المؤقت التلقائي
 threading.Thread(target=scheduled_messages, daemon=True).start()
 
 # ================= حماية الروابط =================
-
 links_count = {}
 def handle_links(event, user_id, gid=None):
     try:
@@ -198,7 +188,6 @@ def handle_links(event, user_id, gid=None):
     return False
 
 # ================= معالجة الرسائل =================
-
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     try:
@@ -224,6 +213,16 @@ def handle_message(event):
             return
 
         text_lower = user_text.lower()
+
+        # أمر مساعدة
+        if text_lower == "مساعدة":
+            try:
+                with open(HELP_FILE, "r", encoding="utf-8") as f:
+                    help_text = f.read()
+                safe_reply_silent_fail(event.reply_token, help_text)
+            except Exception as e:
+                logger.error(f"خطأ في تحميل ملف المساعدة: {e}")
+            return
 
         # أمر فضل
         if text_lower == "فضل":
@@ -270,7 +269,6 @@ def handle_message(event):
         logger.error(f"خطأ في معالجة الرسالة: {e}", exc_info=True)
 
 # ================= Webhook =================
-
 @app.route("/", methods=["GET"])
 def home():
     return "Bot is running", 200
@@ -288,7 +286,6 @@ def callback():
     return "OK", 200
 
 # ================= تشغيل التطبيق =================
-
 if __name__ == "__main__":
     logger.info(f"تشغيل البوت على المنفذ {PORT}")
     app.run(host="0.0.0.0", port=PORT)
