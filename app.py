@@ -31,6 +31,12 @@ CONTENT_FILE = "content.json"
 HELP_FILE = "help.txt"
 FADL_FILE = "fadl.json"
 
+# ================= التأكد من وجود fadl.json =================
+if not os.path.exists(FADL_FILE):
+    with open(FADL_FILE, "w", encoding="utf-8") as f:
+        json.dump({"fadl": []}, f, ensure_ascii=False, indent=2)
+    logger.info(f"{FADL_FILE} لم يكن موجودًا، تم إنشاؤه تلقائيًا")
+
 # ================= تحميل بيانات فضل =================
 
 def load_fadl_content():
@@ -203,8 +209,6 @@ def handle_message(event):
         gid = getattr(event.source, "group_id", None)
 
         # باقي الكود كما هو بدون أي تغيير
-        # ...
-        # لا حاجة لتغيير أي شيء، الكود كامل كما أعطيتني
         pass
 
     except Exception as e:
