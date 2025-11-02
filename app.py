@@ -4,6 +4,8 @@ from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import os, random, json, threading, time, logging
 from dotenv import load_dotenv
+from datetime import datetime
+import pytz
 
 # ================= إعداد التسجيل =================
 logging.basicConfig(
@@ -141,13 +143,26 @@ def get_tasbih_status(user_id, gid=None):
     )
 
 def normalize_tasbih_text(text):
+    """تطبيع نص التسبيح لقبول جميع الصيغ"""
     text = text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("ة", "ه")
+    
     tasbih_map = {
         "استغفرالله": "استغفر الله",
+        "استغفراللة": "استغفر الله",
+        "استغفراللله": "استغفر الله",
         "سبحانالله": "سبحان الله",
+        "سبحاناللة": "سبحان الله",
+        "سبحاناللله": "سبحان الله",
         "الحمدلله": "الحمد لله",
-        "اللهأكبر": "الله أكبر"
+        "الحمدللة": "الحمد لله",
+        "الحمدلللة": "الحمد لله",
+        "اللهأكبر": "الله أكبر",
+        "اللهاكبر": "الله أكبر",
+        "اللةأكبر": "الله أكبر",
+        "اللةاكبر": "الله أكبر",
+        "اللللهاكبر": "الله أكبر"
     }
+    
     return tasbih_map.get(text)
 
 # ================= إرسال رسائل تلقائية =================
@@ -223,7 +238,7 @@ def check_salam(text):
     text_lower = text.lower()
     return any(s in text_lower for s in salam_list)
 
-# ================= معالجة الرسائل =================
+# ================= أمر ذكرني =================
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     try:
@@ -281,51 +296,50 @@ def handle_message(event):
         normalized = normalize_tasbih_text(user_text)
         if normalized:
             counts = tasbih_counts[user_id]
+            
+            # التحقق من الوصول للحد
             if counts[normalized] >= TASBIH_LIMITS:
                 safe_reply(event.reply_token, f"تم اكتمال {normalized} مسبقا")
                 return
-
+            
             counts[normalized] += 1
             save_data()
 
+            # رسالة اكتمال الذكر
             if counts[normalized] == TASBIH_LIMITS:
                 safe_reply(event.reply_token, f"تم اكتمال {normalized}")
+                
+                # التحقق من اكتمال جميع الأذكار الأربعة
                 if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
                     safe_send_message(user_id, "تم اكتمال الأذكار الأربعة، جزاك الله خيرًا")
                 return
-
+            
+            # عرض الحالة
             status = get_tasbih_status(user_id, gid)
             safe_reply(event.reply_token, status)
             return
 
-        # ================= أمر ذكرني =================
+        # أمر ذكرني اليدوي
         if text_lower == "ذكرني":
-            try:
-                category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-                messages = content.get(category, [])
-                if not messages:
-                    safe_reply(event.reply_token, "لا يوجد محتوى متاح الآن")
-                    return
-
-                message = random.choice(messages)
-
-                # الرد على المستخدم مباشرة
-                safe_reply(event.reply_token, message)
-
-                # الإرسال لجميع المستخدمين والمجموعات
-                sent_count = 0
-                for uid in list(target_users):
-                    if uid != user_id and safe_send_message(uid, message):
-                        sent_count += 1
-
-                for g in list(target_groups):
-                    if g != gid and safe_send_message(g, message):
-                        sent_count += 1
-
-                logger.info(f"تم إرسال ذكرني إلى {sent_count} مستخدم/مجموعة")
-
-            except Exception as e:
-                logger.error(f"خطأ في أمر ذكرني: {e}", exc_info=True)
+            category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+            messages = content.get(category, [])
+            if not messages:
+                return
+            
+            message = random.choice(messages)
+            
+            # الرد للمستخدم
+            safe_reply(event.reply_token, message)
+            
+            # الإرسال لجميع المستخدمين والمجموعات
+            for uid in list(target_users):
+                if uid != user_id:
+                    safe_send_message(uid, message)
+            
+            for g in list(target_groups):
+                if g != gid:
+                    safe_send_message(g, message)
+            
             return
 
     except Exception as e:
@@ -347,6 +361,47 @@ def callback():
     except Exception as e:
         logger.error(f"خطأ في Webhook: {e}")
     return "OK", 200
+
+# ================= تذكير تلقائي بأوقات الصلاة =================
+PRAYER_TIMES = {
+    "الفجر": "05:00",
+    "الظهر": "12:30",
+    "العصر": "15:45",
+    "المغرب": "18:10",
+    "العشاء": "19:30"
+}
+
+def prayer_time_reminder():
+    sa_timezone = pytz.timezone("Asia/Riyadh")
+    sent_today = set()  # لتجنب الإرسال المتكرر في نفس اليوم
+
+    while True:
+        now = datetime.now(sa_timezone)
+        current_time = now.strftime("%H:%M")
+        today_date = now.date()
+
+        for prayer, prayer_time in PRAYER_TIMES.items():
+            key = (today_date, prayer)
+            if current_time == prayer_time and key not in sent_today:
+                message = f"🕌 وقت {prayer} الآن. لا تنس الصلاة وذكر الله."
+                
+                # إرسال لجميع المستخدمين
+                for uid in list(target_users):
+                    safe_send_message(uid, message)
+                
+                # إرسال لجميع المجموعات
+                for gid in list(target_groups):
+                    safe_send_message(gid, message)
+                
+                sent_today.add(key)
+        
+        # تنظيف sent_today عند بداية يوم جديد
+        if len(sent_today) > 50:
+            sent_today.clear()
+        
+        time.sleep(20)
+
+threading.Thread(target=prayer_time_reminder, daemon=True).start()
 
 # ================= تشغيل التطبيق =================
 if __name__ == "__main__":
