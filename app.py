@@ -141,26 +141,13 @@ def get_tasbih_status(user_id, gid=None):
     )
 
 def normalize_tasbih_text(text):
-    """تطبيع نص التسبيح لقبول جميع الصيغ"""
     text = text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("ة", "ه")
-    
     tasbih_map = {
         "استغفرالله": "استغفر الله",
-        "استغفراللة": "استغفر الله",
-        "استغفراللله": "استغفر الله",
         "سبحانالله": "سبحان الله",
-        "سبحاناللة": "سبحان الله",
-        "سبحاناللله": "سبحان الله",
         "الحمدلله": "الحمد لله",
-        "الحمدللة": "الحمد لله",
-        "الحمدلللة": "الحمد لله",
-        "اللهأكبر": "الله أكبر",
-        "اللهاكبر": "الله أكبر",
-        "اللةأكبر": "الله أكبر",
-        "اللةاكبر": "الله أكبر",
-        "اللللهاكبر": "الله أكبر"
+        "اللهأكبر": "الله أكبر"
     }
-    
     return tasbih_map.get(text)
 
 # ================= إرسال رسائل تلقائية =================
@@ -294,54 +281,53 @@ def handle_message(event):
         normalized = normalize_tasbih_text(user_text)
         if normalized:
             counts = tasbih_counts[user_id]
-            
-            # التحقق من الوصول للحد
             if counts[normalized] >= TASBIH_LIMITS:
                 safe_reply(event.reply_token, f"تم اكتمال {normalized} مسبقا")
                 return
-            
+
             counts[normalized] += 1
             save_data()
 
-            # رسالة اكتمال الذكر
             if counts[normalized] == TASBIH_LIMITS:
                 safe_reply(event.reply_token, f"تم اكتمال {normalized}")
-                
-                # التحقق من اكتمال جميع الأذكار الأربعة
                 if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
                     safe_send_message(user_id, "تم اكتمال الأذكار الأربعة، جزاك الله خيرًا")
                 return
-            
-            # عرض الحالة
+
             status = get_tasbih_status(user_id, gid)
             safe_reply(event.reply_token, status)
             return
 
-        # أمر ذكرني
+        # ================= أمر ذكرني =================
         if text_lower == "ذكرني":
-            category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-            messages = content.get(category, [])
-            if not messages:
-                return
-            
-            message = random.choice(messages)
-            
-            # الرد للمستخدم
-            safe_reply(event.reply_token, message)
-            
-            # الإرسال لجميع المستخدمين والمجموعات
-            for uid in list(target_users):
-                if uid != user_id:
-                    safe_send_message(uid, message)
-            
-            for g in list(target_groups):
-                if g != gid:
-                    safe_send_message(g, message)
-            
+            try:
+                category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+                messages = content.get(category, [])
+                if not messages:
+                    safe_reply(event.reply_token, "لا يوجد محتوى متاح الآن")
+                    return
+
+                message = random.choice(messages)
+
+                # الرد على المستخدم مباشرة
+                safe_reply(event.reply_token, message)
+
+                # الإرسال لجميع المستخدمين والمجموعات
+                sent_count = 0
+                for uid in list(target_users):
+                    if uid != user_id and safe_send_message(uid, message):
+                        sent_count += 1
+
+                for g in list(target_groups):
+                    if g != gid and safe_send_message(g, message):
+                        sent_count += 1
+
+                logger.info(f"تم إرسال ذكرني إلى {sent_count} مستخدم/مجموعة")
+
+            except Exception as e:
+                logger.error(f"خطأ في أمر ذكرني: {e}", exc_info=True)
             return
 
-        # تجاهل باقي الرسائل
-        
     except Exception as e:
         logger.error(f"خطأ في معالجة الرسالة: {e}", exc_info=True)
 
