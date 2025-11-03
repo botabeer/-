@@ -348,7 +348,35 @@ def callback():
         logger.error(f"خطأ في Webhook: {e}")
     return "OK", 200
 
+# ================= عند عودة التشغيل (تشغيل أمر ذكرني تلقائيًا) =================
+def remind_all_on_start():
+    try:
+        logger.info("🔄 تشغيل أمر ذكرني تلقائيًا عند بدء البوت...")
+
+        category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+        messages = content.get(category, [])
+        if not messages:
+            logger.warning("")
+            return
+
+        message = random.choice(messages)
+        sent_count = 0
+
+        for uid in list(target_users):
+            if safe_send_message(uid, message):
+                sent_count += 1
+
+        for gid in list(target_groups):
+            if safe_send_message(gid, message):
+                sent_count += 1
+
+        logger.info(f"✅ تم إرسال ذكرني تلقائيًا إلى {sent_count} مستخدم/مجموعة")
+    except Exception as e:
+        logger.error(f": {e}", exc_info=True)
+
 # ================= تشغيل التطبيق =================
 if __name__ == "__main__":
     logger.info(f"تشغيل البوت على المنفذ {PORT}")
+    # تشغيل أمر ذكرني عند بداية التشغيل
+    threading.Thread(target=remind_all_on_start, daemon=True).start()
     app.run(host="0.0.0.0", port=PORT)
