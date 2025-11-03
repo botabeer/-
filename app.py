@@ -374,6 +374,39 @@ def remind_all_on_start():
     except Exception as e:
         logger.error(f": {e}", exc_info=True)
 
+# ================= تذكير يدوي عبر كرون =================
+@app.route("/reminder", methods=["GET"])
+def reminder():
+    """إرسال ذكر عشوائي لجميع المستخدمين والمجموعات عند استدعاء كرون"""
+    try:
+        category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+        messages = content.get(category, [])
+        if not messages:
+            logger.warning("لا يوجد محتوى متاح للإرسال")
+            return jsonify({"status": "no_content"}), 200
+
+        message = random.choice(messages)
+        sent_count = 0
+
+        for uid in list(target_users):
+            if safe_send_message(uid, message):
+                sent_count += 1
+
+        for gid in list(target_groups):
+            if safe_send_message(gid, message):
+                sent_count += 1
+
+        logger.info(f"📤 تم إرسال تذكير عشوائي إلى {sent_count} مستخدم/مجموعة")
+        return jsonify({
+            "status": "ok",
+            "sent": sent_count,
+            "message": message
+        }), 200
+
+    except Exception as e:
+        logger.error(f"خطأ في /reminder: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 # ================= تشغيل التطبيق =================
 if __name__ == "__main__":
     logger.info(f"تشغيل البوت على المنفذ {PORT}")
