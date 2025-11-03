@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
@@ -29,6 +29,9 @@ DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
 HELP_FILE = "help.txt"
 FADL_FILE = "fadl.json"
+MORNING_ADHKAR_FILE = "morning_adhkar.json"
+EVENING_ADHKAR_FILE = "evening_adhkar.json"
+SLEEP_ADHKAR_FILE = "sleep_adhkar.json"
 
 # ================= تحميل بيانات فضل =================
 def load_fadl_content():
@@ -54,6 +57,51 @@ def get_next_fadl():
     message = fadl_content[fadl_index]
     fadl_index = (fadl_index + 1) % len(fadl_content)
     return message
+
+# ================= تحميل أذكار الصباح والمساء والنوم =================
+def load_adhkar_file(filename):
+    try:
+        if not os.path.exists(filename):
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump({"adhkar": []}, f, ensure_ascii=False, indent=2)
+            logger.info(f"{filename} تم إنشاؤه")
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("adhkar", [])
+    except Exception as e:
+        logger.error(f"خطأ في تحميل {filename}: {e}")
+        return []
+
+morning_adhkar = load_adhkar_file(MORNING_ADHKAR_FILE)
+evening_adhkar = load_adhkar_file(EVENING_ADHKAR_FILE)
+sleep_adhkar = load_adhkar_file(SLEEP_ADHKAR_FILE)
+
+def get_morning_adhkar_message():
+    if not morning_adhkar:
+        return "🌅 أذكار الصباح\n\nلا يوجد أذكار محفوظة"
+    
+    message = "🌅 أذكار الصباح\n\n"
+    for adhkar in morning_adhkar:
+        message += f"{adhkar}\n\n"
+    return message.strip()
+
+def get_evening_adhkar_message():
+    if not evening_adhkar:
+        return "🌆 أذكار المساء\n\nلا يوجد أذكار محفوظة"
+    
+    message = "🌆 أذكار المساء\n\n"
+    for adhkar in evening_adhkar:
+        message += f"{adhkar}\n\n"
+    return message.strip()
+
+def get_sleep_adhkar_message():
+    if not sleep_adhkar:
+        return "🌙 أذكار النوم\n\nلا يوجد أذكار محفوظة"
+    
+    message = "🌙 أذكار النوم\n\n"
+    for adhkar in sleep_adhkar:
+        message += f"{adhkar}\n\n"
+    return message.strip()
 
 # ================= تحميل البيانات =================
 def load_data():
@@ -98,14 +146,16 @@ def safe_send_message(target_id, message):
     try:
         line_bot_api.push_message(target_id, TextSendMessage(text=message))
         return True
-    except:
+    except Exception as e:
+        logger.error(f"فشل إرسال الرسالة إلى {target_id}: {e}")
         return False
 
 def safe_reply(reply_token, message):
     try:
         line_bot_api.reply_message(reply_token, TextSendMessage(text=message))
         return True
-    except:
+    except Exception as e:
+        logger.error(f"فشل الرد: {e}")
         return False
 
 def get_user_display_name(user_id):
@@ -165,42 +215,85 @@ def normalize_tasbih_text(text):
     
     return tasbih_map.get(text)
 
-# ================= إرسال رسائل تلقائية =================
-def send_random_message_to_all():
-    try:
-        category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-        messages = content.get(category, [])
-        if not messages:
-            logger.warning(f"لا يوجد محتوى في {category}")
-            return
+# ================= إرسال أذكار الصباح والمساء والنوم =================
+def send_morning_adhkar():
+    """إرسال أذكار الصباح لجميع المستخدمين والمجموعات"""
+    message = get_morning_adhkar_message()
+    sent_count = 0
+    
+    for uid in list(target_users):
+        if safe_send_message(uid, message):
+            sent_count += 1
+    
+    for gid in list(target_groups):
+        if safe_send_message(gid, message):
+            sent_count += 1
+    
+    logger.info(f"تم إرسال أذكار الصباح إلى {sent_count} مستخدم/مجموعة")
 
-        message = random.choice(messages)
-        sent_count = 0
+def send_evening_adhkar():
+    """إرسال أذكار المساء لجميع المستخدمين والمجموعات"""
+    message = get_evening_adhkar_message()
+    sent_count = 0
+    
+    for uid in list(target_users):
+        if safe_send_message(uid, message):
+            sent_count += 1
+    
+    for gid in list(target_groups):
+        if safe_send_message(gid, message):
+            sent_count += 1
+    
+    logger.info(f"تم إرسال أذكار المساء إلى {sent_count} مستخدم/مجموعة")
 
-        for uid in list(target_users):
-            if safe_send_message(uid, message):
-                sent_count += 1
+def send_sleep_adhkar():
+    """إرسال أذكار النوم لجميع المستخدمين والمجموعات"""
+    message = get_sleep_adhkar_message()
+    sent_count = 0
+    
+    for uid in list(target_users):
+        if safe_send_message(uid, message):
+            sent_count += 1
+    
+    for gid in list(target_groups):
+        if safe_send_message(gid, message):
+            sent_count += 1
+    
+    logger.info(f"تم إرسال أذكار النوم إلى {sent_count} مستخدم/مجموعة")
 
-        for gid in list(target_groups):
-            if safe_send_message(gid, message):
-                sent_count += 1
-
-        logger.info(f"تم إرسال رسالة تلقائية إلى {sent_count} مستخدم/مجموعة")
-    except Exception as e:
-        logger.error(f"خطأ في إرسال الرسائل التلقائية: {e}")
-
-def scheduled_messages():
+# ================= جدولة أذكار الصباح والمساء والنوم =================
+def adhkar_scheduler():
+    """جدولة أذكار الصباح والمساء والنوم بتوقيت السعودية"""
+    sa_timezone = pytz.timezone("Asia/Riyadh")
+    sent_today = {"morning": None, "evening": None, "sleep": None}
+    
     while True:
         try:
-            send_random_message_to_all()
-            sleep_time = random.randint(14400, 18000)
-            logger.info(f"الرسالة القادمة بعد {sleep_time//3600} ساعة")
-            time.sleep(sleep_time)
+            now = datetime.now(sa_timezone)
+            current_time = now.strftime("%H:%M")
+            today_date = now.date()
+            
+            # أذكار الصباح - 6:00 صباحًا
+            if current_time == "06:00" and sent_today["morning"] != today_date:
+                send_morning_adhkar()
+                sent_today["morning"] = today_date
+            
+            # أذكار المساء - 5:00 مساءً
+            elif current_time == "17:00" and sent_today["evening"] != today_date:
+                send_evening_adhkar()
+                sent_today["evening"] = today_date
+            
+            # أذكار النوم - 10:00 مساءً
+            elif current_time == "22:00" and sent_today["sleep"] != today_date:
+                send_sleep_adhkar()
+                sent_today["sleep"] = today_date
+            
+            time.sleep(30)
         except Exception as e:
-            logger.error(f"خطأ في الجدولة: {e}")
-            time.sleep(3600)
+            logger.error(f"خطأ في جدولة الأذكار: {e}")
+            time.sleep(60)
 
-threading.Thread(target=scheduled_messages, daemon=True).start()
+threading.Thread(target=adhkar_scheduler, daemon=True).start()
 
 # ================= حماية الروابط =================
 links_count = {}
@@ -238,7 +331,33 @@ def check_salam(text):
     text_lower = text.lower()
     return any(s in text_lower for s in salam_list)
 
-# ================= أمر ذكرني =================
+# ================= قائمة الأوامر المعترف بها =================
+VALID_COMMANDS = [
+    "مساعدة", "فضل", "تسبيح",
+    "استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر",
+    "ذكرني"
+]
+
+def is_valid_command(text):
+    """التحقق من أن النص هو أمر صالح أو سلام أو تسبيح"""
+    text_lower = text.lower().strip()
+    
+    # التحقق من السلام
+    if check_salam(text):
+        return True
+    
+    # التحقق من الأوامر
+    if text_lower in [cmd.lower() for cmd in VALID_COMMANDS]:
+        return True
+    
+    # التحقق من التسبيح المطبّع
+    normalized = normalize_tasbih_text(text)
+    if normalized:
+        return True
+    
+    return False
+
+# ================= معالجة الرسائل =================
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     try:
@@ -261,6 +380,11 @@ def handle_message(event):
 
         # حماية الروابط
         if handle_links(event, user_id, gid):
+            return
+
+        # تجاهل الرسائل التي ليست أوامر معترف بها
+        if not is_valid_command(user_text):
+            logger.info(f"تجاهل رسالة من {user_id}: {user_text[:50]}")
             return
 
         text_lower = user_text.lower()
@@ -311,7 +435,7 @@ def handle_message(event):
                 
                 # التحقق من اكتمال جميع الأذكار الأربعة
                 if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
-                    safe_send_message(user_id, "تم اكتمال الأذكار الأربعة، جزاك الله خيرًا")
+                    safe_send_message(user_id, "تم اكتمال التسبيحات الأربعة، جزاك الله خيرًا")
                 return
             
             # عرض الحالة
@@ -350,6 +474,16 @@ def handle_message(event):
 def home():
     return "Bot is running", 200
 
+@app.route("/health", methods=["GET"])
+def health_check():
+    """نقطة فحص صحة البوت"""
+    return jsonify({
+        "status": "healthy",
+        "users": len(target_users),
+        "groups": len(target_groups),
+        "timestamp": datetime.now().isoformat()
+    }), 200
+
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
@@ -362,48 +496,9 @@ def callback():
         logger.error(f"خطأ في Webhook: {e}")
     return "OK", 200
 
-# ================= تذكير تلقائي بأوقات الصلاة =================
-PRAYER_TIMES = {
-    "الفجر": "05:00",
-    "الظهر": "12:30",
-    "العصر": "15:45",
-    "المغرب": "18:10",
-    "العشاء": "19:30"
-}
-
-def prayer_time_reminder():
-    sa_timezone = pytz.timezone("Asia/Riyadh")
-    sent_today = set()  # لتجنب الإرسال المتكرر في نفس اليوم
-
-    while True:
-        now = datetime.now(sa_timezone)
-        current_time = now.strftime("%H:%M")
-        today_date = now.date()
-
-        for prayer, prayer_time in PRAYER_TIMES.items():
-            key = (today_date, prayer)
-            if current_time == prayer_time and key not in sent_today:
-                message = f"🕌 وقت {prayer} الآن. لا تنس الصلاة وذكر الله."
-                
-                # إرسال لجميع المستخدمين
-                for uid in list(target_users):
-                    safe_send_message(uid, message)
-                
-                # إرسال لجميع المجموعات
-                for gid in list(target_groups):
-                    safe_send_message(gid, message)
-                
-                sent_today.add(key)
-        
-        # تنظيف sent_today عند بداية يوم جديد
-        if len(sent_today) > 50:
-            sent_today.clear()
-        
-        time.sleep(20)
-
-threading.Thread(target=prayer_time_reminder, daemon=True).start()
-
 # ================= تشغيل التطبيق =================
 if __name__ == "__main__":
     logger.info(f"تشغيل البوت على المنفذ {PORT}")
+    logger.info(f"عدد المستخدمين: {len(target_users)}")
+    logger.info(f"عدد المجموعات: {len(target_groups)}")
     app.run(host="0.0.0.0", port=PORT)
