@@ -1,9 +1,11 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import os, random, json, threading, time, logging
 from dotenv import load_dotenv
+from datetime import datetime
+import pytz
 
 # ================= إعداد التسجيل =================
 logging.basicConfig(
@@ -27,6 +29,9 @@ DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
 HELP_FILE = "help.txt"
 FADL_FILE = "fadl.json"
+MORNING_ADHKAR_FILE = "morning_adhkar.json"
+EVENING_ADHKAR_FILE = "evening_adhkar.json"
+SLEEP_ADHKAR_FILE = "sleep_adhkar.json"
 
 # ================= تحميل بيانات فضل =================
 def load_fadl_content():
@@ -52,6 +57,51 @@ def get_next_fadl():
     message = fadl_content[fadl_index]
     fadl_index = (fadl_index + 1) % len(fadl_content)
     return message
+
+# ================= تحميل أذكار الصباح والمساء والنوم =================
+def load_adhkar_file(filename):
+    try:
+        if not os.path.exists(filename):
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump({"adhkar": []}, f, ensure_ascii=False, indent=2)
+            logger.info(f"{filename} تم إنشاؤه")
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("adhkar", [])
+    except Exception as e:
+        logger.error(f"خطأ في تحميل {filename}: {e}")
+        return []
+
+morning_adhkar = load_adhkar_file(MORNING_ADHKAR_FILE)
+evening_adhkar = load_adhkar_file(EVENING_ADHKAR_FILE)
+sleep_adhkar = load_adhkar_file(SLEEP_ADHKAR_FILE)
+
+def get_morning_adhkar_message():
+    if not morning_adhkar:
+        return "🌅 أذكار الصباح\n\nلا يوجد أذكار محفوظة"
+    
+    message = "🌅 أذكار الصباح\n\n"
+    for adhkar in morning_adhkar:
+        message += f"{adhkar}\n\n"
+    return message.strip()
+
+def get_evening_adhkar_message():
+    if not evening_adhkar:
+        return "🌆 أذكار المساء\n\nلا يوجد أذكار محفوظة"
+    
+    message = "🌆 أذكار المساء\n\n"
+    for adhkar in evening_adhkar:
+        message += f"{adhkar}\n\n"
+    return message.strip()
+
+def get_sleep_adhkar_message():
+    if not sleep_adhkar:
+        return "🌙 أذكار النوم\n\nلا يوجد أذكار محفوظة"
+    
+    message = "🌙 أذكار النوم\n\n"
+    for adhkar in sleep_adhkar:
+        message += f"{adhkar}\n\n"
+    return message.strip()
 
 # ================= تحميل البيانات =================
 def load_data():
@@ -96,14 +146,16 @@ def safe_send_message(target_id, message):
     try:
         line_bot_api.push_message(target_id, TextSendMessage(text=message))
         return True
-    except:
+    except Exception as e:
+        logger.error(f"فشل إرسال الرسالة إلى {target_id}: {e}")
         return False
 
 def safe_reply(reply_token, message):
     try:
         line_bot_api.reply_message(reply_token, TextSendMessage(text=message))
         return True
-    except:
+    except Exception as e:
+        logger.error(f"فشل الرد: {e}")
         return False
 
 def get_user_display_name(user_id):
@@ -141,51 +193,107 @@ def get_tasbih_status(user_id, gid=None):
     )
 
 def normalize_tasbih_text(text):
+    """تطبيع نص التسبيح لقبول جميع الصيغ"""
     text = text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("ة", "ه")
+    
     tasbih_map = {
         "استغفرالله": "استغفر الله",
+        "استغفراللة": "استغفر الله",
+        "استغفراللله": "استغفر الله",
         "سبحانالله": "سبحان الله",
+        "سبحاناللة": "سبحان الله",
+        "سبحاناللله": "سبحان الله",
         "الحمدلله": "الحمد لله",
-        "اللهأكبر": "الله أكبر"
+        "الحمدللة": "الحمد لله",
+        "الحمدلللة": "الحمد لله",
+        "اللهأكبر": "الله أكبر",
+        "اللهاكبر": "الله أكبر",
+        "اللةأكبر": "الله أكبر",
+        "اللةاكبر": "الله أكبر",
+        "اللللهاكبر": "الله أكبر"
     }
+    
     return tasbih_map.get(text)
 
-# ================= إرسال رسائل تلقائية =================
-def send_random_message_to_all():
-    try:
-        category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-        messages = content.get(category, [])
-        if not messages:
-            logger.warning(f"لا يوجد محتوى في {category}")
-            return
+# ================= إرسال أذكار الصباح والمساء والنوم =================
+def send_morning_adhkar():
+    """إرسال أذكار الصباح لجميع المستخدمين والمجموعات"""
+    message = get_morning_adhkar_message()
+    sent_count = 0
+    
+    for uid in list(target_users):
+        if safe_send_message(uid, message):
+            sent_count += 1
+    
+    for gid in list(target_groups):
+        if safe_send_message(gid, message):
+            sent_count += 1
+    
+    logger.info(f"تم إرسال أذكار الصباح إلى {sent_count} مستخدم/مجموعة")
 
-        message = random.choice(messages)
-        sent_count = 0
+def send_evening_adhkar():
+    """إرسال أذكار المساء لجميع المستخدمين والمجموعات"""
+    message = get_evening_adhkar_message()
+    sent_count = 0
+    
+    for uid in list(target_users):
+        if safe_send_message(uid, message):
+            sent_count += 1
+    
+    for gid in list(target_groups):
+        if safe_send_message(gid, message):
+            sent_count += 1
+    
+    logger.info(f"تم إرسال أذكار المساء إلى {sent_count} مستخدم/مجموعة")
 
-        for uid in list(target_users):
-            if safe_send_message(uid, message):
-                sent_count += 1
+def send_sleep_adhkar():
+    """إرسال أذكار النوم لجميع المستخدمين والمجموعات"""
+    message = get_sleep_adhkar_message()
+    sent_count = 0
+    
+    for uid in list(target_users):
+        if safe_send_message(uid, message):
+            sent_count += 1
+    
+    for gid in list(target_groups):
+        if safe_send_message(gid, message):
+            sent_count += 1
+    
+    logger.info(f"تم إرسال أذكار النوم إلى {sent_count} مستخدم/مجموعة")
 
-        for gid in list(target_groups):
-            if safe_send_message(gid, message):
-                sent_count += 1
-
-        logger.info(f"تم إرسال رسالة تلقائية إلى {sent_count} مستخدم/مجموعة")
-    except Exception as e:
-        logger.error(f"خطأ في إرسال الرسائل التلقائية: {e}")
-
-def scheduled_messages():
+# ================= جدولة أذكار الصباح والمساء والنوم =================
+def adhkar_scheduler():
+    """جدولة أذكار الصباح والمساء والنوم بتوقيت السعودية"""
+    sa_timezone = pytz.timezone("Asia/Riyadh")
+    sent_today = {"morning": None, "evening": None, "sleep": None}
+    
     while True:
         try:
-            send_random_message_to_all()
-            sleep_time = random.randint(14400, 18000)
-            logger.info(f"الرسالة القادمة بعد {sleep_time//3600} ساعة")
-            time.sleep(sleep_time)
+            now = datetime.now(sa_timezone)
+            current_time = now.strftime("%H:%M")
+            today_date = now.date()
+            
+            # أذكار الصباح - 6:00 صباحًا
+            if current_time == "06:00" and sent_today["morning"] != today_date:
+                send_morning_adhkar()
+                sent_today["morning"] = today_date
+            
+            # أذكار المساء - 5:00 مساءً
+            elif current_time == "17:00" and sent_today["evening"] != today_date:
+                send_evening_adhkar()
+                sent_today["evening"] = today_date
+            
+            # أذكار النوم - 10:00 مساءً
+            elif current_time == "22:00" and sent_today["sleep"] != today_date:
+                send_sleep_adhkar()
+                sent_today["sleep"] = today_date
+            
+            time.sleep(30)
         except Exception as e:
-            logger.error(f"خطأ في الجدولة: {e}")
-            time.sleep(3600)
+            logger.error(f"خطأ في جدولة الأذكار: {e}")
+            time.sleep(60)
 
-threading.Thread(target=scheduled_messages, daemon=True).start()
+threading.Thread(target=adhkar_scheduler, daemon=True).start()
 
 # ================= حماية الروابط =================
 links_count = {}
@@ -223,6 +331,32 @@ def check_salam(text):
     text_lower = text.lower()
     return any(s in text_lower for s in salam_list)
 
+# ================= قائمة الأوامر المعترف بها =================
+VALID_COMMANDS = [
+    "مساعدة", "فضل", "تسبيح",
+    "استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر",
+    "ذكرني"
+]
+
+def is_valid_command(text):
+    """التحقق من أن النص هو أمر صالح أو سلام أو تسبيح"""
+    text_lower = text.lower().strip()
+    
+    # التحقق من السلام
+    if check_salam(text):
+        return True
+    
+    # التحقق من الأوامر
+    if text_lower in [cmd.lower() for cmd in VALID_COMMANDS]:
+        return True
+    
+    # التحقق من التسبيح المطبّع
+    normalized = normalize_tasbih_text(text)
+    if normalized:
+        return True
+    
+    return False
+
 # ================= معالجة الرسائل =================
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
@@ -246,6 +380,11 @@ def handle_message(event):
 
         # حماية الروابط
         if handle_links(event, user_id, gid):
+            return
+
+        # تجاهل الرسائل التي ليست أوامر معترف بها
+        if not is_valid_command(user_text):
+            logger.info(f"تجاهل رسالة من {user_id}: {user_text[:50]}")
             return
 
         text_lower = user_text.lower()
@@ -281,49 +420,55 @@ def handle_message(event):
         normalized = normalize_tasbih_text(user_text)
         if normalized:
             counts = tasbih_counts[user_id]
+            
+            # التحقق من الوصول للحد
             if counts[normalized] >= TASBIH_LIMITS:
                 safe_reply(event.reply_token, f"تم اكتمال {normalized} مسبقا")
                 return
-
+            
             counts[normalized] += 1
             save_data()
 
+            # رسالة اكتمال الذكر
             if counts[normalized] == TASBIH_LIMITS:
                 safe_reply(event.reply_token, f"تم اكتمال {normalized}")
+                
+                # التحقق من اكتمال جميع التسبيحات الأربعة
                 if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
-                    safe_send_message(user_id, "تم اكتمال الأذكار الأربعة، جزاك الله خيرًا")
+                    safe_send_message(user_id, "تم اكتمال التسبيحات الأربعة، جزاك الله خيرًا")
                 return
-
+            
+            # عرض الحالة
             status = get_tasbih_status(user_id, gid)
             safe_reply(event.reply_token, status)
             return
 
-        # ================= أمر ذكرني =================
+        # أمر ذكرني - إرسال دعاء/ذكر لك وللجميع
         if text_lower == "ذكرني":
             try:
+                # اختيار نوع المحتوى عشوائيًا
                 category = random.choice(["duas", "adhkar", "hadiths", "quran"])
                 messages = content.get(category, [])
                 if not messages:
                     safe_reply(event.reply_token, "لا يوجد محتوى متاح الآن")
                     return
-
+                
                 message = random.choice(messages)
-
+                
                 # الرد على المستخدم مباشرة
                 safe_reply(event.reply_token, message)
-
-                # الإرسال لجميع المستخدمين والمجموعات
+                
+                # الإرسال لجميع المستخدمين والمجموعات المسجلين
                 sent_count = 0
                 for uid in list(target_users):
                     if uid != user_id and safe_send_message(uid, message):
                         sent_count += 1
-
+                
                 for g in list(target_groups):
                     if g != gid and safe_send_message(g, message):
                         sent_count += 1
-
+                
                 logger.info(f"تم إرسال ذكرني إلى {sent_count} مستخدم/مجموعة")
-
             except Exception as e:
                 logger.error(f"خطأ في أمر ذكرني: {e}", exc_info=True)
             return
@@ -331,32 +476,18 @@ def handle_message(event):
     except Exception as e:
         logger.error(f"خطأ في معالجة الرسالة: {e}", exc_info=True)
 
-# ================= Webhook =================
-@app.route("/", methods=["GET"])
-def home():
-    return "Bot is running", 200
-
-@app.route("/callback", methods=["POST"])
-def callback():
-    signature = request.headers.get("X-Line-Signature", "")
-    body = request.get_data(as_text=True)
-    try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        logger.warning("توقيع غير صالح")
-    except Exception as e:
-        logger.error(f"خطأ في Webhook: {e}")
-    return "OK", 200
-
 # ================= عند عودة التشغيل (تشغيل أمر ذكرني تلقائيًا) =================
 def remind_all_on_start():
+    """إرسال ذكر تلقائي عند بدء تشغيل البوت"""
     try:
+        time.sleep(5)  # انتظار 5 ثواني للتأكد من جاهزية البوت
+        
         logger.info("🔄 تشغيل أمر ذكرني تلقائيًا عند بدء البوت...")
 
         category = random.choice(["duas", "adhkar", "hadiths", "quran"])
         messages = content.get(category, [])
         if not messages:
-            logger.warning("")
+            logger.warning("لا يوجد محتوى متاح للإرسال عند بدء التشغيل")
             return
 
         message = random.choice(messages)
@@ -372,7 +503,34 @@ def remind_all_on_start():
 
         logger.info(f"✅ تم إرسال ذكرني تلقائيًا إلى {sent_count} مستخدم/مجموعة")
     except Exception as e:
-        logger.error(f": {e}", exc_info=True)
+        logger.error(f"خطأ في إرسال ذكرني عند بدء التشغيل: {e}", exc_info=True)
+
+# ================= Webhook =================
+@app.route("/", methods=["GET"])
+def home():
+    return "Bot is running", 200
+
+@app.route("/health", methods=["GET"])
+def health_check():
+    """نقطة فحص صحة البوت"""
+    return jsonify({
+        "status": "healthy",
+        "users": len(target_users),
+        "groups": len(target_groups),
+        "timestamp": datetime.now().isoformat()
+    }), 200
+
+@app.route("/callback", methods=["POST"])
+def callback():
+    signature = request.headers.get("X-Line-Signature", "")
+    body = request.get_data(as_text=True)
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError:
+        logger.warning("توقيع غير صالح")
+    except Exception as e:
+        logger.error(f"خطأ في Webhook: {e}")
+    return "OK", 200
 
 # ================= تذكير يدوي عبر كرون =================
 @app.route("/reminder", methods=["GET"])
@@ -410,6 +568,10 @@ def reminder():
 # ================= تشغيل التطبيق =================
 if __name__ == "__main__":
     logger.info(f"تشغيل البوت على المنفذ {PORT}")
-    # تشغيل أمر ذكرني عند بداية التشغيل
+    logger.info(f"عدد المستخدمين: {len(target_users)}")
+    logger.info(f"عدد المجموعات: {len(target_groups)}")
+    
+    # تشغيل أمر ذكرني عند بداية التشغيل في thread منفصل
     threading.Thread(target=remind_all_on_start, daemon=True).start()
+    
     app.run(host="0.0.0.0", port=PORT)
