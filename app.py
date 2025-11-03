@@ -443,27 +443,34 @@ def handle_message(event):
             safe_reply(event.reply_token, status)
             return
 
-        # أمر ذكرني اليدوي
+        # أمر ذكرني - إرسال دعاء/ذكر لك وللجميع
         if text_lower == "ذكرني":
-            category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-            messages = content.get(category, [])
-            if not messages:
-                return
-            
-            message = random.choice(messages)
-            
-            # الرد للمستخدم
-            safe_reply(event.reply_token, message)
-            
-            # الإرسال لجميع المستخدمين والمجموعات
-            for uid in list(target_users):
-                if uid != user_id:
-                    safe_send_message(uid, message)
-            
-            for g in list(target_groups):
-                if g != gid:
-                    safe_send_message(g, message)
-            
+            try:
+                # اختيار نوع المحتوى عشوائيًا
+                category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+                messages = content.get(category, [])
+                if not messages:
+                    safe_reply(event.reply_token, "لا يوجد محتوى متاح الآن")
+                    return
+                
+                message = random.choice(messages)
+                
+                # الرد على المستخدم مباشرة
+                safe_reply(event.reply_token, message)
+                
+                # الإرسال لجميع المستخدمين والمجموعات المسجلين
+                sent_count = 0
+                for uid in list(target_users):
+                    if uid != user_id and safe_send_message(uid, message):
+                        sent_count += 1
+                
+                for g in list(target_groups):
+                    if g != gid and safe_send_message(g, message):
+                        sent_count += 1
+                
+                logger.info(f"تم إرسال ذكرني إلى {sent_count} مستخدم/مجموعة")
+            except Exception as e:
+                logger.error(f"خطأ في أمر ذكرني: {e}", exc_info=True)
             return
 
     except Exception as e:
