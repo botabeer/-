@@ -158,6 +158,37 @@ def safe_reply(reply_token, message):
         logger.error(f"فشل الرد: {e}")
         return False
 
+# ============================================================
+# دالة الإرسال الجماعي لجميع المستخدمين والمجموعات المسجلين
+# ============================================================
+def broadcast_text_to_all(text):
+    """
+    ترسل رسالة نصية لجميع المستخدمين والمجموعات المسجلين.
+    """
+    sent_count = 0
+    failed_count = 0
+    
+    # إرسال للمستخدمين
+    for user_id in list(target_users):
+        try:
+            line_bot_api.push_message(user_id, TextSendMessage(text=text))
+            sent_count += 1
+        except Exception as e:
+            logger.error(f"فشل إرسال الرسالة إلى المستخدم {user_id}: {e}")
+            failed_count += 1
+    
+    # إرسال للمجموعات
+    for group_id in list(target_groups):
+        try:
+            line_bot_api.push_message(group_id, TextSendMessage(text=text))
+            sent_count += 1
+        except Exception as e:
+            logger.error(f"فشل إرسال الرسالة إلى المجموعة {group_id}: {e}")
+            failed_count += 1
+    
+    logger.info(f"📤 تم إرسال الرسالة إلى {sent_count} مستخدم/مجموعة (فشل: {failed_count})")
+    return sent_count, failed_count
+
 def get_user_display_name(user_id):
     try:
         profile = line_bot_api.get_profile(user_id)
@@ -219,47 +250,20 @@ def normalize_tasbih_text(text):
 def send_morning_adhkar():
     """إرسال أذكار الصباح لجميع المستخدمين والمجموعات"""
     message = get_morning_adhkar_message()
-    sent_count = 0
-    
-    for uid in list(target_users):
-        if safe_send_message(uid, message):
-            sent_count += 1
-    
-    for gid in list(target_groups):
-        if safe_send_message(gid, message):
-            sent_count += 1
-    
-    logger.info(f"تم إرسال أذكار الصباح إلى {sent_count} مستخدم/مجموعة")
+    sent_count, failed_count = broadcast_text_to_all(message)
+    logger.info(f"🌅 أذكار الصباح: {sent_count} نجح، {failed_count} فشل")
 
 def send_evening_adhkar():
     """إرسال أذكار المساء لجميع المستخدمين والمجموعات"""
     message = get_evening_adhkar_message()
-    sent_count = 0
-    
-    for uid in list(target_users):
-        if safe_send_message(uid, message):
-            sent_count += 1
-    
-    for gid in list(target_groups):
-        if safe_send_message(gid, message):
-            sent_count += 1
-    
-    logger.info(f"تم إرسال أذكار المساء إلى {sent_count} مستخدم/مجموعة")
+    sent_count, failed_count = broadcast_text_to_all(message)
+    logger.info(f"🌆 أذكار المساء: {sent_count} نجح، {failed_count} فشل")
 
 def send_sleep_adhkar():
     """إرسال أذكار النوم لجميع المستخدمين والمجموعات"""
     message = get_sleep_adhkar_message()
-    sent_count = 0
-    
-    for uid in list(target_users):
-        if safe_send_message(uid, message):
-            sent_count += 1
-    
-    for gid in list(target_groups):
-        if safe_send_message(gid, message):
-            sent_count += 1
-    
-    logger.info(f"تم إرسال أذكار النوم إلى {sent_count} مستخدم/مجموعة")
+    sent_count, failed_count = broadcast_text_to_all(message)
+    logger.info(f"🌙 أذكار النوم: {sent_count} نجح، {failed_count} فشل")
 
 # ================= جدولة أذكار الصباح والمساء والنوم =================
 def adhkar_scheduler():
@@ -458,17 +462,10 @@ def handle_message(event):
                 # الرد على المستخدم مباشرة
                 safe_reply(event.reply_token, message)
                 
-                # الإرسال لجميع المستخدمين والمجموعات المسجلين
-                sent_count = 0
-                for uid in list(target_users):
-                    if uid != user_id and safe_send_message(uid, message):
-                        sent_count += 1
+                # إرسال جماعي لجميع المستخدمين والمجموعات باستخدام الدالة
+                sent_count, failed_count = broadcast_text_to_all(message)
                 
-                for g in list(target_groups):
-                    if g != gid and safe_send_message(g, message):
-                        sent_count += 1
-                
-                logger.info(f"تم إرسال ذكرني إلى {sent_count} مستخدم/مجموعة")
+                logger.info(f"✅ أمر ذكرني: تم الإرسال لـ {sent_count} (نجح) و {failed_count} (فشل)")
             except Exception as e:
                 logger.error(f"خطأ في أمر ذكرني: {e}", exc_info=True)
             return
@@ -491,17 +488,9 @@ def remind_all_on_start():
             return
 
         message = random.choice(messages)
-        sent_count = 0
+        sent_count, failed_count = broadcast_text_to_all(message)
 
-        for uid in list(target_users):
-            if safe_send_message(uid, message):
-                sent_count += 1
-
-        for gid in list(target_groups):
-            if safe_send_message(gid, message):
-                sent_count += 1
-
-        logger.info(f"✅ تم إرسال ذكرني تلقائيًا إلى {sent_count} مستخدم/مجموعة")
+        logger.info(f"✅ ذكرني تلقائي عند البدء: {sent_count} نجح، {failed_count} فشل")
     except Exception as e:
         logger.error(f"خطأ في إرسال ذكرني عند بدء التشغيل: {e}", exc_info=True)
 
@@ -544,20 +533,13 @@ def reminder():
             return jsonify({"status": "no_content"}), 200
 
         message = random.choice(messages)
-        sent_count = 0
+        sent_count, failed_count = broadcast_text_to_all(message)
 
-        for uid in list(target_users):
-            if safe_send_message(uid, message):
-                sent_count += 1
-
-        for gid in list(target_groups):
-            if safe_send_message(gid, message):
-                sent_count += 1
-
-        logger.info(f"📤 تم إرسال تذكير عشوائي إلى {sent_count} مستخدم/مجموعة")
+        logger.info(f"📤 تذكير Cron: {sent_count} نجح، {failed_count} فشل")
         return jsonify({
             "status": "ok",
             "sent": sent_count,
+            "failed": failed_count,
             "message": message
         }), 200
 
