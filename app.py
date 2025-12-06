@@ -72,7 +72,7 @@ def get_adhkar_message(adhkar_list, title):
     if not adhkar_list:
         return f"{title}\n\nلا يوجد أذكار"
     msg = f"{title}\n\n"
-    for a in adhkar_list[:5]:  # أول 5 أذكار فقط لتوفير الرسائل
+    for a in adhkar_list[:5]:
         msg += f"{a}\n\n"
     return msg.strip()
 
@@ -128,13 +128,14 @@ def ensure_user_counts(uid):
         save_data()
 
 def create_tasbih_flex(user_id):
-    """إنشاء نافذة تسبيح دائرية أنيقة"""
+    """نافذة تسبيح ثلاثية الأبعاد احترافية"""
     counts = tasbih_counts.get(user_id, {key: 0 for key in TASBIH_KEYS})
     
-    # حساب إجمالي التقدم
     total = sum(counts.values())
     total_max = 33 * 4
     percentage = int((total / total_max) * 100)
+    
+    circle_color = "#2ecc71" if percentage == 100 else "#3498db"
     
     flex_content = {
         "type": "bubble",
@@ -146,9 +147,9 @@ def create_tasbih_flex(user_id):
                 {
                     "type": "text",
                     "text": "بوت 85",
-                    "size": "lg",
+                    "size": "xl",
                     "align": "center",
-                    "color": "#ffffff",
+                    "color": "#ecf0f1",
                     "weight": "bold",
                     "margin": "none"
                 },
@@ -167,20 +168,123 @@ def create_tasbih_flex(user_id):
                         {
                             "type": "text",
                             "text": f"{percentage}%",
-                            "size": "sm",
+                            "size": "md",
                             "align": "center",
-                            "color": "#cccccc",
+                            "color": "#bdc3c7",
+                            "margin": "sm"
+                        },
+                        {
+                            "type": "text",
+                            "text": f"من {total_max}",
+                            "size": "xs",
+                            "align": "center",
+                            "color": "#95a5a6",
+                            "margin": "xs"
+                        }
+                    ],
+                    "margin": "xl",
+                    "paddingAll": "30px",
+                    "cornerRadius": "100px",
+                    "borderWidth": "4px",
+                    "borderColor": circle_color,
+                    "width": "200px",
+                    "height": "200px",
+                    "justifyContent": "center",
+                    "backgroundColor": "#34495e"
+                },
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "box",
+                            "layout": "horizontal",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": f"استغفر الله {counts['استغفر الله']}/33",
+                                    "size": "sm",
+                                    "color": "#2ecc71" if counts['استغفر الله'] >= 33 else "#ecf0f1",
+                                    "flex": 1
+                                },
+                                {
+                                    "type": "text",
+                                    "text": "✓" if counts['استغفر الله'] >= 33 else "",
+                                    "size": "sm",
+                                    "color": "#2ecc71",
+                                    "align": "end"
+                                }
+                            ],
+                            "margin": "md"
+                        },
+                        {
+                            "type": "box",
+                            "layout": "horizontal",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": f"سبحان الله {counts['سبحان الله']}/33",
+                                    "size": "sm",
+                                    "color": "#2ecc71" if counts['سبحان الله'] >= 33 else "#ecf0f1",
+                                    "flex": 1
+                                },
+                                {
+                                    "type": "text",
+                                    "text": "✓" if counts['سبحان الله'] >= 33 else "",
+                                    "size": "sm",
+                                    "color": "#2ecc71",
+                                    "align": "end"
+                                }
+                            ],
+                            "margin": "sm"
+                        },
+                        {
+                            "type": "box",
+                            "layout": "horizontal",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": f"الحمد لله {counts['الحمد لله']}/33",
+                                    "size": "sm",
+                                    "color": "#2ecc71" if counts['الحمد لله'] >= 33 else "#ecf0f1",
+                                    "flex": 1
+                                },
+                                {
+                                    "type": "text",
+                                    "text": "✓" if counts['الحمد لله'] >= 33 else "",
+                                    "size": "sm",
+                                    "color": "#2ecc71",
+                                    "align": "end"
+                                }
+                            ],
+                            "margin": "sm"
+                        },
+                        {
+                            "type": "box",
+                            "layout": "horizontal",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": f"الله أكبر {counts['الله أكبر']}/33",
+                                    "size": "sm",
+                                    "color": "#2ecc71" if counts['الله أكبر'] >= 33 else "#ecf0f1",
+                                    "flex": 1
+                                },
+                                {
+                                    "type": "text",
+                                    "text": "✓" if counts['الله أكبر'] >= 33 else "",
+                                    "size": "sm",
+                                    "color": "#2ecc71",
+                                    "align": "end"
+                                }
+                            ],
                             "margin": "sm"
                         }
                     ],
                     "margin": "xl",
-                    "paddingAll": "35px",
-                    "cornerRadius": "100px",
-                    "borderWidth": "3px",
-                    "borderColor": "#ffffff",
-                    "width": "190px",
-                    "height": "190px",
-                    "justifyContent": "center"
+                    "paddingAll": "15px",
+                    "backgroundColor": "#2c3e50",
+                    "cornerRadius": "10px"
                 },
                 {
                     "type": "box",
@@ -197,8 +301,8 @@ def create_tasbih_flex(user_id):
                                         "label": "استغفر الله",
                                         "data": f"tasbih_استغفر الله_{user_id}"
                                     },
-                                    "style": "secondary",
-                                    "color": "#ffffff",
+                                    "style": "primary",
+                                    "color": "#16a085",
                                     "height": "sm",
                                     "flex": 1
                                 },
@@ -209,8 +313,8 @@ def create_tasbih_flex(user_id):
                                         "label": "سبحان الله",
                                         "data": f"tasbih_سبحان الله_{user_id}"
                                     },
-                                    "style": "secondary",
-                                    "color": "#ffffff",
+                                    "style": "primary",
+                                    "color": "#2980b9",
                                     "height": "sm",
                                     "flex": 1
                                 }
@@ -228,8 +332,8 @@ def create_tasbih_flex(user_id):
                                         "label": "الحمد لله",
                                         "data": f"tasbih_الحمد لله_{user_id}"
                                     },
-                                    "style": "secondary",
-                                    "color": "#ffffff",
+                                    "style": "primary",
+                                    "color": "#8e44ad",
                                     "height": "sm",
                                     "flex": 1
                                 },
@@ -240,31 +344,30 @@ def create_tasbih_flex(user_id):
                                         "label": "الله أكبر",
                                         "data": f"tasbih_الله أكبر_{user_id}"
                                     },
-                                    "style": "secondary",
-                                    "color": "#ffffff",
+                                    "style": "primary",
+                                    "color": "#c0392b",
                                     "height": "sm",
                                     "flex": 1
                                 }
                             ],
                             "spacing": "sm",
                             "margin": "sm"
-                        },
-                        {
-                            "type": "separator",
-                            "margin": "lg",
-                            "color": "#444444"
-                        },
-                        {
-                            "type": "text",
-                            "text": "تم إنشاء هذا البوت بواسطة عبير الدوسري @ 2025",
-                            "size": "xxs",
-                            "color": "#888888",
-                            "align": "center",
-                            "margin": "md",
-                            "wrap": True
                         }
                     ],
                     "margin": "xl"
+                },
+                {
+                    "type": "separator",
+                    "margin": "lg",
+                    "color": "#34495e"
+                },
+                {
+                    "type": "text",
+                    "text": "عبير الدوسري © 2025",
+                    "size": "xxs",
+                    "color": "#7f8c8d",
+                    "align": "center",
+                    "margin": "md"
                 }
             ],
             "paddingAll": "20px",
@@ -280,7 +383,6 @@ def normalize_tasbih(text):
     return m.get(text)
 
 def adhkar_scheduler():
-    # مواقيت الرياض +3
     sa_tz = pytz.timezone("Asia/Riyadh")
     sent = {"morning": None, "evening": None, "sleep": None}
     while True:
@@ -313,7 +415,7 @@ def handle_links(event, user_id, gid):
         text = event.message.text.strip()
         if any(x in text.lower() for x in ["http://", "https://", "www."]):
             links_count[user_id] = links_count.get(user_id, 0) + 1
-            if links_count[user_id] == 2:
+            if links_count[user_id] == 2 and gid:
                 name = get_group_member_name(gid, user_id)
                 reply_message(event.reply_token, f"{name}\nالرجاء عدم تكرار إرسال الروابط")
                 return True
@@ -328,7 +430,7 @@ def check_salam(text):
     salam = ["السلام عليكم", "سلام عليكم", "السلام", "سلام", "عليكم السلام"]
     return any(s in text.lower() for s in salam)
 
-VALID_COMMANDS = ["مساعدة", "فضل", "تسبيح", "ذكرني", "معلومات"]
+VALID_COMMANDS = ["مساعدة", "فضل", "تسبيح", "ذكرني"]
 
 def is_valid_command(text):
     txt = text.lower().strip()
@@ -343,17 +445,13 @@ def handle_message(event):
         user_id = event.source.user_id
         gid = getattr(event.source, "group_id", None)
 
-        # التعامل مع المجموعات فقط
-        if not gid:
-            return
-
-        if gid not in target_groups:
+        if gid and gid not in target_groups:
             target_groups.add(gid)
             save_data()
 
         ensure_user_counts(user_id)
 
-        if handle_links(event, user_id, gid):
+        if gid and handle_links(event, user_id, gid):
             return
 
         if not is_valid_command(user_text):
@@ -366,13 +464,8 @@ def handle_message(event):
             return
 
         if text_lower == "مساعدة":
-            help_text = "بوت 85\n\nذكرني - ذكر أو دعاء\nفضل - فضل العبادات\nتسبيح - نافذة التسبيح\nمعلومات - عن البوت"
+            help_text = "بوت 85\n\nذكرني - ذكر أو دعاء\nفضل - فضل العبادات\nتسبيح - نافذة التسبيح"
             reply_message(event.reply_token, help_text)
-            return
-
-        if text_lower == "معلومات":
-            info_text = "بوت 85\n\nبوت إسلامي للأذكار والأدعية\n\nتم إنشاء هذا البوت بواسطة\nعبير الدوسري\n2025"
-            reply_message(event.reply_token, info_text)
             return
 
         if text_lower == "فضل":
@@ -403,7 +496,7 @@ def handle_message(event):
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
-    """معالجة ضغط الأزرار - تحديث العداد فقط"""
+    """تحديث النافذة عند كل ضغطة"""
     try:
         data = event.postback.data
         
@@ -418,27 +511,22 @@ def handle_postback(event):
             ensure_user_counts(user_id)
             counts = tasbih_counts[user_id]
             
-            # زيادة العدد
             if counts[tasbih_text] < TASBIH_LIMITS:
                 counts[tasbih_text] += 1
                 save_data()
                 
-                # إرسال نافذة محدثة
                 flex_msg = create_tasbih_flex(user_id)
                 reply_message(event.reply_token, flex_msg)
                 
-                # رسالة عند الاكتمال فقط
                 if counts[tasbih_text] == TASBIH_LIMITS:
                     time.sleep(0.5)
-                    gid = getattr(event.source, "group_id", None)
-                    if gid:
-                        send_message(gid, f"تم اكتمال {tasbih_text}")
-                        
-                        if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
-                            time.sleep(0.5)
-                            send_message(gid, "تم اكتمال الأذكار الأربعة\nجزاك الله خيراً")
+                    target_id = getattr(event.source, "group_id", None) or user_id
+                    send_message(target_id, f"✓ تم اكتمال {tasbih_text}")
+                    
+                    if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
+                        time.sleep(0.5)
+                        send_message(target_id, "✓ تم اكتمال الأذكار الأربعة\nجزاك الله خيراً")
             else:
-                # إذا كان مكتمل، أرسل نفس النافذة
                 flex_msg = create_tasbih_flex(user_id)
                 reply_message(event.reply_token, flex_msg)
     
