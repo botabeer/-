@@ -143,6 +143,15 @@ def create_tasbih_flex(user_id):
             "layout": "vertical",
             "contents": [
                 {
+                    "type": "text",
+                    "text": "بوت 85",
+                    "size": "md",
+                    "align": "center",
+                    "color": "#ffffff",
+                    "weight": "bold",
+                    "margin": "none"
+                },
+                {
                     "type": "box",
                     "layout": "vertical",
                     "contents": [
@@ -170,7 +179,8 @@ def create_tasbih_flex(user_id):
                     "width": "140px",
                     "height": "140px",
                     "justifyContent": "center",
-                    "backgroundColor": "#2a2a2a"
+                    "backgroundColor": "#2a2a2a",
+                    "margin": "md"
                 },
                 {
                     "type": "box",
@@ -346,7 +356,7 @@ def create_tasbih_flex(user_id):
                 },
                 {
                     "type": "text",
-                    "text": "عبير الدوسري © 2025",
+                    "text": "تم إنشاء هذا البوت بواسطة عبير الدوسري @ 2025",
                     "size": "xxs",
                     "color": "#606060",
                     "align": "center",
@@ -479,7 +489,7 @@ def handle_message(event):
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
-    """تحديث النافذة عند كل ضغطة"""
+    """رد نصي فقط - بدون نوافذ متكررة"""
     try:
         data = event.postback.data
         
@@ -498,20 +508,21 @@ def handle_postback(event):
                 counts[tasbih_text] += 1
                 save_data()
                 
-                flex_msg = create_tasbih_flex(user_id)
-                reply_message(event.reply_token, flex_msg)
+                # رد نصي بسيط فقط
+                count_now = counts[tasbih_text]
+                reply_message(event.reply_token, f"{tasbih_text} ({count_now}/33)")
                 
-                if counts[tasbih_text] == TASBIH_LIMITS:
+                # رسائل الاكتمال
+                if count_now == TASBIH_LIMITS:
                     time.sleep(0.5)
                     target_id = getattr(event.source, "group_id", None) or user_id
-                    send_message(target_id, f"✓ تم اكتمال {tasbih_text}")
+                    send_message(target_id, f"✓ اكتمل {tasbih_text}")
                     
                     if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
                         time.sleep(0.5)
-                        send_message(target_id, "✓ تم اكتمال الأذكار الأربعة\nجزاك الله خيراً")
+                        send_message(target_id, "✓ اكتملت الأذكار الأربعة\nجزاك الله خيراً")
             else:
-                flex_msg = create_tasbih_flex(user_id)
-                reply_message(event.reply_token, flex_msg)
+                reply_message(event.reply_token, f"{tasbih_text} مكتمل (33/33)")
     
     except Exception as e:
         logger.error(f"خطأ postback: {e}")
