@@ -1,0 +1,37 @@
+{
+  "Asia/Riyadh": {
+    "Fajr": "05:15",
+    "Dhuhr": "12:00",
+    "Asr": "15:30",
+    "Maghrib": "18:00",
+    "Isha": "19:30"
+  },
+  "Asia/Dubai": {
+    "Fajr": "05:20",
+    "Dhuhr": "12:15",
+    "Asr": "15:45",
+    "Maghrib": "18:15",
+    "Isha": "19:45"
+  },
+  "Asia/Kuwait": {
+    "Fajr": "05:10",
+    "Dhuhr": "11:55",
+    "Asr": "15:25",
+    "Maghrib": "17:55",
+    "Isha": "19:25"
+  },
+  "Asia/Qatar": {
+    "Fajr": "05:15",
+    "Dhuhr": "12:00",
+    "Asr": "15:30",
+    "Maghrib": "18:00",
+    "Isha": "19:30"
+  },
+  "Africa/Cairo": {
+    "Fajr": "05:00",
+    "Dhuhr": "11:50",
+    "Asr": "15:10",
+    "Maghrib": "17:40",
+    "Isha": "19:10"
+  }
+}
