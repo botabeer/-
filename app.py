@@ -209,9 +209,9 @@ def create_tasbih_flex(user_id):
                                 },
                                 {
                                     "type": "text",
-                                    "text": "✓" if counts['استغفر الله'] >= 33 else "",
+                                    "text": "✓" if counts['استغفر الله'] >= 33 else "•",
                                     "size": "sm",
-                                    "color": "#2ecc71",
+                                    "color": "#2ecc71" if counts['استغفر الله'] >= 33 else "#95a5a6",
                                     "align": "end"
                                 }
                             ],
@@ -230,9 +230,9 @@ def create_tasbih_flex(user_id):
                                 },
                                 {
                                     "type": "text",
-                                    "text": "✓" if counts['سبحان الله'] >= 33 else "",
+                                    "text": "✓" if counts['سبحان الله'] >= 33 else "•",
                                     "size": "sm",
-                                    "color": "#2ecc71",
+                                    "color": "#2ecc71" if counts['سبحان الله'] >= 33 else "#95a5a6",
                                     "align": "end"
                                 }
                             ],
@@ -251,9 +251,9 @@ def create_tasbih_flex(user_id):
                                 },
                                 {
                                     "type": "text",
-                                    "text": "✓" if counts['الحمد لله'] >= 33 else "",
+                                    "text": "✓" if counts['الحمد لله'] >= 33 else "•",
                                     "size": "sm",
-                                    "color": "#2ecc71",
+                                    "color": "#2ecc71" if counts['الحمد لله'] >= 33 else "#95a5a6",
                                     "align": "end"
                                 }
                             ],
@@ -272,9 +272,9 @@ def create_tasbih_flex(user_id):
                                 },
                                 {
                                     "type": "text",
-                                    "text": "✓" if counts['الله أكبر'] >= 33 else "",
+                                    "text": "✓" if counts['الله أكبر'] >= 33 else "•",
                                     "size": "sm",
-                                    "color": "#2ecc71",
+                                    "color": "#2ecc71" if counts['الله أكبر'] >= 33 else "#95a5a6",
                                     "align": "end"
                                 }
                             ],
