@@ -305,7 +305,7 @@ def create_tasbih_flex(user_id):
                         },
                         {
                             "type": "text",
-                            "text": "عبير الدوسري 2025",
+                            "text": "تم إنشاء هذا البوت بواسطة عبير الدوسري @ 2025",
                             "size": "xxs",
                             "color": "#888888",
                             "align": "center",
