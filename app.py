@@ -128,30 +128,12 @@ def ensure_user_counts(uid):
         save_data()
 
 def create_tasbih_flex(user_id):
-    """نافذة تسبيح احترافية بتصميم زجاجي ثلاثي الأبعاد"""
+    """نافذة تسبيح بسيطة بتدرجات الأبيض والأسود"""
     counts = tasbih_counts.get(user_id, {key: 0 for key in TASBIH_KEYS})
     
     total = sum(counts.values())
     total_max = 33 * 4
     percentage = int((total / total_max) * 100)
-    
-    # ألوان متدرجة حسب التقدم
-    if percentage == 100:
-        main_color = "#10b981"  # أخضر للإكمال
-        border_color = "#059669"
-        bg_gradient = "#064e3b"
-    elif percentage >= 75:
-        main_color = "#3b82f6"  # أزرق للتقدم الجيد
-        border_color = "#2563eb"
-        bg_gradient = "#1e3a8a"
-    elif percentage >= 50:
-        main_color = "#8b5cf6"  # بنفسجي
-        border_color = "#7c3aed"
-        bg_gradient = "#5b21b6"
-    else:
-        main_color = "#6366f1"  # نيلي
-        border_color = "#4f46e5"
-        bg_gradient = "#312e81"
     
     flex_content = {
         "type": "bubble",
@@ -160,101 +142,49 @@ def create_tasbih_flex(user_id):
             "type": "box",
             "layout": "vertical",
             "contents": [
-                # Header مع تأثير زجاجي
+                # العنوان البسيط
+                {
+                    "type": "text",
+                    "text": "التسبيح",
+                    "size": "md",
+                    "weight": "bold",
+                    "color": "#ffffff",
+                    "align": "center"
+                },
+                # العداد المركزي
                 {
                     "type": "box",
                     "layout": "vertical",
                     "contents": [
                         {
                             "type": "text",
-                            "text": "التسبيح الإلكتروني",
-                            "size": "lg",
+                            "text": str(total),
+                            "size": "xxl",
                             "weight": "bold",
                             "color": "#ffffff",
                             "align": "center"
                         },
                         {
                             "type": "text",
-                            "text": "بوت 85",
+                            "text": f"{percentage}%",
                             "size": "xs",
-                            "color": "#a0a0a0",
+                            "color": "#808080",
                             "align": "center",
-                            "margin": "xs"
+                            "margin": "sm"
                         }
                     ],
                     "paddingAll": "15px",
-                    "backgroundColor": "#1a1a1a80",
-                    "cornerRadius": "15px",
-                    "margin": "none"
+                    "cornerRadius": "10px",
+                    "backgroundColor": "#1a1a1a",
+                    "borderWidth": "1px",
+                    "borderColor": "#404040",
+                    "margin": "md"
                 },
-                # الدائرة المركزية بتأثير 3D
+                # قائمة الأذكار
                 {
                     "type": "box",
                     "layout": "vertical",
                     "contents": [
-                        {
-                            "type": "box",
-                            "layout": "vertical",
-                            "contents": [
-                                {
-                                    "type": "text",
-                                    "text": str(total),
-                                    "size": "xxl",
-                                    "weight": "bold",
-                                    "color": "#ffffff",
-                                    "align": "center"
-                                },
-                                {
-                                    "type": "text",
-                                    "text": f"من {total_max}",
-                                    "size": "xs",
-                                    "color": "#a0a0a0",
-                                    "align": "center",
-                                    "margin": "sm"
-                                },
-                                {
-                                    "type": "box",
-                                    "layout": "vertical",
-                                    "contents": [
-                                        {
-                                            "type": "box",
-                                            "layout": "vertical",
-                                            "contents": [],
-                                            "height": "4px",
-                                            "backgroundColor": main_color,
-                                            "width": f"{percentage}%"
-                                        }
-                                    ],
-                                    "backgroundColor": "#2a2a2a",
-                                    "height": "4px",
-                                    "cornerRadius": "2px",
-                                    "margin": "md"
-                                },
-                                {
-                                    "type": "text",
-                                    "text": f"{percentage}% مكتمل",
-                                    "size": "xxs",
-                                    "color": main_color,
-                                    "align": "center",
-                                    "margin": "sm",
-                                    "weight": "bold"
-                                }
-                            ],
-                            "paddingAll": "20px",
-                            "cornerRadius": "20px",
-                            "backgroundColor": bg_gradient + "40",
-                            "borderWidth": "2px",
-                            "borderColor": border_color + "60"
-                        }
-                    ],
-                    "margin": "lg"
-                },
-                # قائمة الأذكار بتصميم مدمج
-                {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        # استغفر الله
                         {
                             "type": "box",
                             "layout": "horizontal",
@@ -262,26 +192,23 @@ def create_tasbih_flex(user_id):
                                 {
                                     "type": "text",
                                     "text": "استغفر الله",
-                                    "size": "sm",
-                                    "color": "#ffffff" if counts['استغفر الله'] >= 33 else "#b0b0b0",
-                                    "flex": 3,
-                                    "weight": "bold" if counts['استغفر الله'] >= 33 else "regular"
+                                    "size": "xs",
+                                    "color": "#ffffff" if counts['استغفر الله'] >= 33 else "#808080",
+                                    "flex": 2
                                 },
                                 {
                                     "type": "text",
                                     "text": f"{counts['استغفر الله']}/33",
-                                    "size": "sm",
-                                    "color": "#10b981" if counts['استغفر الله'] >= 33 else "#6b7280",
+                                    "size": "xs",
+                                    "color": "#c0c0c0",
                                     "align": "end",
-                                    "flex": 1,
-                                    "weight": "bold"
+                                    "flex": 1
                                 }
                             ],
-                            "paddingAll": "10px",
-                            "backgroundColor": "#ffffff10" if counts['استغفر الله'] >= 33 else "#00000020",
-                            "cornerRadius": "8px"
+                            "paddingAll": "8px",
+                            "backgroundColor": "#ffffff08" if counts['استغفر الله'] >= 33 else "#00000010",
+                            "cornerRadius": "5px"
                         },
-                        # سبحان الله
                         {
                             "type": "box",
                             "layout": "horizontal",
@@ -289,27 +216,24 @@ def create_tasbih_flex(user_id):
                                 {
                                     "type": "text",
                                     "text": "سبحان الله",
-                                    "size": "sm",
-                                    "color": "#ffffff" if counts['سبحان الله'] >= 33 else "#b0b0b0",
-                                    "flex": 3,
-                                    "weight": "bold" if counts['سبحان الله'] >= 33 else "regular"
+                                    "size": "xs",
+                                    "color": "#ffffff" if counts['سبحان الله'] >= 33 else "#808080",
+                                    "flex": 2
                                 },
                                 {
                                     "type": "text",
                                     "text": f"{counts['سبحان الله']}/33",
-                                    "size": "sm",
-                                    "color": "#10b981" if counts['سبحان الله'] >= 33 else "#6b7280",
+                                    "size": "xs",
+                                    "color": "#c0c0c0",
                                     "align": "end",
-                                    "flex": 1,
-                                    "weight": "bold"
+                                    "flex": 1
                                 }
                             ],
-                            "paddingAll": "10px",
-                            "backgroundColor": "#ffffff10" if counts['سبحان الله'] >= 33 else "#00000020",
-                            "cornerRadius": "8px",
+                            "paddingAll": "8px",
+                            "backgroundColor": "#ffffff08" if counts['سبحان الله'] >= 33 else "#00000010",
+                            "cornerRadius": "5px",
                             "margin": "xs"
                         },
-                        # الحمد لله
                         {
                             "type": "box",
                             "layout": "horizontal",
@@ -317,27 +241,24 @@ def create_tasbih_flex(user_id):
                                 {
                                     "type": "text",
                                     "text": "الحمد لله",
-                                    "size": "sm",
-                                    "color": "#ffffff" if counts['الحمد لله'] >= 33 else "#b0b0b0",
-                                    "flex": 3,
-                                    "weight": "bold" if counts['الحمد لله'] >= 33 else "regular"
+                                    "size": "xs",
+                                    "color": "#ffffff" if counts['الحمد لله'] >= 33 else "#808080",
+                                    "flex": 2
                                 },
                                 {
                                     "type": "text",
                                     "text": f"{counts['الحمد لله']}/33",
-                                    "size": "sm",
-                                    "color": "#10b981" if counts['الحمد لله'] >= 33 else "#6b7280",
+                                    "size": "xs",
+                                    "color": "#c0c0c0",
                                     "align": "end",
-                                    "flex": 1,
-                                    "weight": "bold"
+                                    "flex": 1
                                 }
                             ],
-                            "paddingAll": "10px",
-                            "backgroundColor": "#ffffff10" if counts['الحمد لله'] >= 33 else "#00000020",
-                            "cornerRadius": "8px",
+                            "paddingAll": "8px",
+                            "backgroundColor": "#ffffff08" if counts['الحمد لله'] >= 33 else "#00000010",
+                            "cornerRadius": "5px",
                             "margin": "xs"
                         },
-                        # الله أكبر
                         {
                             "type": "box",
                             "layout": "horizontal",
@@ -345,29 +266,26 @@ def create_tasbih_flex(user_id):
                                 {
                                     "type": "text",
                                     "text": "الله أكبر",
-                                    "size": "sm",
-                                    "color": "#ffffff" if counts['الله أكبر'] >= 33 else "#b0b0b0",
-                                    "flex": 3,
-                                    "weight": "bold" if counts['الله أكبر'] >= 33 else "regular"
+                                    "size": "xs",
+                                    "color": "#ffffff" if counts['الله أكبر'] >= 33 else "#808080",
+                                    "flex": 2
                                 },
                                 {
                                     "type": "text",
                                     "text": f"{counts['الله أكبر']}/33",
-                                    "size": "sm",
-                                    "color": "#10b981" if counts['الله أكبر'] >= 33 else "#6b7280",
+                                    "size": "xs",
+                                    "color": "#c0c0c0",
                                     "align": "end",
-                                    "flex": 1,
-                                    "weight": "bold"
+                                    "flex": 1
                                 }
                             ],
-                            "paddingAll": "10px",
-                            "backgroundColor": "#ffffff10" if counts['الله أكبر'] >= 33 else "#00000020",
-                            "cornerRadius": "8px",
+                            "paddingAll": "8px",
+                            "backgroundColor": "#ffffff08" if counts['الله أكبر'] >= 33 else "#00000010",
+                            "cornerRadius": "5px",
                             "margin": "xs"
                         }
                     ],
-                    "margin": "lg",
-                    "spacing": "none"
+                    "margin": "md"
                 },
                 # أزرار التسبيح
                 {
@@ -385,8 +303,8 @@ def create_tasbih_flex(user_id):
                                         "label": "استغفر الله",
                                         "data": f"tasbih_استغفر الله_{user_id}"
                                     },
-                                    "style": "primary",
-                                    "color": main_color,
+                                    "style": "secondary",
+                                    "color": "#404040",
                                     "height": "sm"
                                 },
                                 {
@@ -396,12 +314,12 @@ def create_tasbih_flex(user_id):
                                         "label": "سبحان الله",
                                         "data": f"tasbih_سبحان الله_{user_id}"
                                     },
-                                    "style": "primary",
-                                    "color": main_color,
+                                    "style": "secondary",
+                                    "color": "#404040",
                                     "height": "sm"
                                 }
                             ],
-                            "spacing": "sm"
+                            "spacing": "xs"
                         },
                         {
                             "type": "box",
@@ -414,8 +332,8 @@ def create_tasbih_flex(user_id):
                                         "label": "الحمد لله",
                                         "data": f"tasbih_الحمد لله_{user_id}"
                                     },
-                                    "style": "primary",
-                                    "color": main_color,
+                                    "style": "secondary",
+                                    "color": "#404040",
                                     "height": "sm"
                                 },
                                 {
@@ -425,39 +343,39 @@ def create_tasbih_flex(user_id):
                                         "label": "الله أكبر",
                                         "data": f"tasbih_الله أكبر_{user_id}"
                                     },
-                                    "style": "primary",
-                                    "color": main_color,
+                                    "style": "secondary",
+                                    "color": "#404040",
                                     "height": "sm"
                                 }
                             ],
-                            "spacing": "sm",
-                            "margin": "sm"
+                            "spacing": "xs",
+                            "margin": "xs"
                         }
                     ],
-                    "margin": "lg"
+                    "margin": "md"
                 },
-                # Footer
+                # الفاصل والفوتر
                 {
                     "type": "separator",
-                    "margin": "lg",
-                    "color": "#30303080"
+                    "margin": "md",
+                    "color": "#303030"
                 },
                 {
                     "type": "text",
-                    "text": "© 2025 عبير الدوسري",
+                    "text": "بوت 85",
                     "size": "xxs",
                     "color": "#606060",
                     "align": "center",
-                    "margin": "md"
+                    "margin": "sm"
                 }
             ],
-            "paddingAll": "18px",
-            "backgroundColor": "#0f0f0f",
+            "paddingAll": "12px",
+            "backgroundColor": "#0a0a0a",
             "spacing": "none"
         }
     }
     
-    return FlexMessage(alt_text="التسبيح الإلكتروني", contents=FlexContainer.from_dict(flex_content))
+    return FlexMessage(alt_text="التسبيح", contents=FlexContainer.from_dict(flex_content))
 
 def normalize_tasbih(text):
     text = text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("ة", "ه")
