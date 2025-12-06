@@ -128,12 +128,30 @@ def ensure_user_counts(uid):
         save_data()
 
 def create_tasbih_flex(user_id):
-    """نافذة تسبيح أنيقة وبسيطة"""
+    """نافذة تسبيح احترافية بتصميم زجاجي ثلاثي الأبعاد"""
     counts = tasbih_counts.get(user_id, {key: 0 for key in TASBIH_KEYS})
     
     total = sum(counts.values())
     total_max = 33 * 4
     percentage = int((total / total_max) * 100)
+    
+    # ألوان متدرجة حسب التقدم
+    if percentage == 100:
+        main_color = "#10b981"  # أخضر للإكمال
+        border_color = "#059669"
+        bg_gradient = "#064e3b"
+    elif percentage >= 75:
+        main_color = "#3b82f6"  # أزرق للتقدم الجيد
+        border_color = "#2563eb"
+        bg_gradient = "#1e3a8a"
+    elif percentage >= 50:
+        main_color = "#8b5cf6"  # بنفسجي
+        border_color = "#7c3aed"
+        bg_gradient = "#5b21b6"
+    else:
+        main_color = "#6366f1"  # نيلي
+        border_color = "#4f46e5"
+        bg_gradient = "#312e81"
     
     flex_content = {
         "type": "bubble",
@@ -142,143 +160,216 @@ def create_tasbih_flex(user_id):
             "type": "box",
             "layout": "vertical",
             "contents": [
-                {
-                    "type": "text",
-                    "text": "بوت 85",
-                    "size": "md",
-                    "align": "center",
-                    "color": "#ffffff",
-                    "weight": "bold",
-                    "margin": "none"
-                },
+                # Header مع تأثير زجاجي
                 {
                     "type": "box",
                     "layout": "vertical",
                     "contents": [
                         {
                             "type": "text",
-                            "text": str(total),
-                            "size": "4xl",
-                            "align": "center",
+                            "text": "التسبيح الإلكتروني",
+                            "size": "lg",
+                            "weight": "bold",
                             "color": "#ffffff",
-                            "weight": "bold"
+                            "align": "center"
                         },
                         {
                             "type": "text",
-                            "text": f"{percentage}%",
+                            "text": "بوت 85",
                             "size": "xs",
-                            "align": "center",
                             "color": "#a0a0a0",
-                            "margin": "sm"
+                            "align": "center",
+                            "margin": "xs"
                         }
                     ],
-                    "paddingAll": "20px",
-                    "cornerRadius": "50px",
-                    "borderWidth": "2px",
-                    "borderColor": "#ffffff" if percentage == 100 else "#606060",
-                    "width": "140px",
-                    "height": "140px",
-                    "justifyContent": "center",
-                    "backgroundColor": "#2a2a2a",
-                    "margin": "md"
+                    "paddingAll": "15px",
+                    "backgroundColor": "#1a1a1a80",
+                    "cornerRadius": "15px",
+                    "margin": "none"
                 },
+                # الدائرة المركزية بتأثير 3D
                 {
                     "type": "box",
                     "layout": "vertical",
                     "contents": [
                         {
                             "type": "box",
+                            "layout": "vertical",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": str(total),
+                                    "size": "xxl",
+                                    "weight": "bold",
+                                    "color": "#ffffff",
+                                    "align": "center"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": f"من {total_max}",
+                                    "size": "xs",
+                                    "color": "#a0a0a0",
+                                    "align": "center",
+                                    "margin": "sm"
+                                },
+                                {
+                                    "type": "box",
+                                    "layout": "vertical",
+                                    "contents": [
+                                        {
+                                            "type": "box",
+                                            "layout": "vertical",
+                                            "contents": [],
+                                            "height": "4px",
+                                            "backgroundColor": main_color,
+                                            "width": f"{percentage}%"
+                                        }
+                                    ],
+                                    "backgroundColor": "#2a2a2a",
+                                    "height": "4px",
+                                    "cornerRadius": "2px",
+                                    "margin": "md"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": f"{percentage}% مكتمل",
+                                    "size": "xxs",
+                                    "color": main_color,
+                                    "align": "center",
+                                    "margin": "sm",
+                                    "weight": "bold"
+                                }
+                            ],
+                            "paddingAll": "20px",
+                            "cornerRadius": "20px",
+                            "backgroundColor": bg_gradient + "40",
+                            "borderWidth": "2px",
+                            "borderColor": border_color + "60"
+                        }
+                    ],
+                    "margin": "lg"
+                },
+                # قائمة الأذكار بتصميم مدمج
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        # استغفر الله
+                        {
+                            "type": "box",
                             "layout": "horizontal",
                             "contents": [
                                 {
                                     "type": "text",
-                                    "text": f"استغفر الله",
-                                    "size": "xs",
-                                    "color": "#ffffff" if counts['استغفر الله'] >= 33 else "#c0c0c0",
-                                    "flex": 2
+                                    "text": "استغفر الله",
+                                    "size": "sm",
+                                    "color": "#ffffff" if counts['استغفر الله'] >= 33 else "#b0b0b0",
+                                    "flex": 3,
+                                    "weight": "bold" if counts['استغفر الله'] >= 33 else "regular"
                                 },
                                 {
                                     "type": "text",
                                     "text": f"{counts['استغفر الله']}/33",
-                                    "size": "xs",
-                                    "color": "#808080",
+                                    "size": "sm",
+                                    "color": "#10b981" if counts['استغفر الله'] >= 33 else "#6b7280",
                                     "align": "end",
-                                    "flex": 1
+                                    "flex": 1,
+                                    "weight": "bold"
                                 }
-                            ]
+                            ],
+                            "paddingAll": "10px",
+                            "backgroundColor": "#ffffff10" if counts['استغفر الله'] >= 33 else "#00000020",
+                            "cornerRadius": "8px"
                         },
+                        # سبحان الله
                         {
                             "type": "box",
                             "layout": "horizontal",
                             "contents": [
                                 {
                                     "type": "text",
-                                    "text": f"سبحان الله",
-                                    "size": "xs",
-                                    "color": "#ffffff" if counts['سبحان الله'] >= 33 else "#c0c0c0",
-                                    "flex": 2
+                                    "text": "سبحان الله",
+                                    "size": "sm",
+                                    "color": "#ffffff" if counts['سبحان الله'] >= 33 else "#b0b0b0",
+                                    "flex": 3,
+                                    "weight": "bold" if counts['سبحان الله'] >= 33 else "regular"
                                 },
                                 {
                                     "type": "text",
                                     "text": f"{counts['سبحان الله']}/33",
-                                    "size": "xs",
-                                    "color": "#808080",
+                                    "size": "sm",
+                                    "color": "#10b981" if counts['سبحان الله'] >= 33 else "#6b7280",
                                     "align": "end",
-                                    "flex": 1
+                                    "flex": 1,
+                                    "weight": "bold"
                                 }
                             ],
-                            "margin": "sm"
+                            "paddingAll": "10px",
+                            "backgroundColor": "#ffffff10" if counts['سبحان الله'] >= 33 else "#00000020",
+                            "cornerRadius": "8px",
+                            "margin": "xs"
                         },
+                        # الحمد لله
                         {
                             "type": "box",
                             "layout": "horizontal",
                             "contents": [
                                 {
                                     "type": "text",
-                                    "text": f"الحمد لله",
-                                    "size": "xs",
-                                    "color": "#ffffff" if counts['الحمد لله'] >= 33 else "#c0c0c0",
-                                    "flex": 2
+                                    "text": "الحمد لله",
+                                    "size": "sm",
+                                    "color": "#ffffff" if counts['الحمد لله'] >= 33 else "#b0b0b0",
+                                    "flex": 3,
+                                    "weight": "bold" if counts['الحمد لله'] >= 33 else "regular"
                                 },
                                 {
                                     "type": "text",
                                     "text": f"{counts['الحمد لله']}/33",
-                                    "size": "xs",
-                                    "color": "#808080",
+                                    "size": "sm",
+                                    "color": "#10b981" if counts['الحمد لله'] >= 33 else "#6b7280",
                                     "align": "end",
-                                    "flex": 1
+                                    "flex": 1,
+                                    "weight": "bold"
                                 }
                             ],
-                            "margin": "sm"
+                            "paddingAll": "10px",
+                            "backgroundColor": "#ffffff10" if counts['الحمد لله'] >= 33 else "#00000020",
+                            "cornerRadius": "8px",
+                            "margin": "xs"
                         },
+                        # الله أكبر
                         {
                             "type": "box",
                             "layout": "horizontal",
                             "contents": [
                                 {
                                     "type": "text",
-                                    "text": f"الله أكبر",
-                                    "size": "xs",
-                                    "color": "#ffffff" if counts['الله أكبر'] >= 33 else "#c0c0c0",
-                                    "flex": 2
+                                    "text": "الله أكبر",
+                                    "size": "sm",
+                                    "color": "#ffffff" if counts['الله أكبر'] >= 33 else "#b0b0b0",
+                                    "flex": 3,
+                                    "weight": "bold" if counts['الله أكبر'] >= 33 else "regular"
                                 },
                                 {
                                     "type": "text",
                                     "text": f"{counts['الله أكبر']}/33",
-                                    "size": "xs",
-                                    "color": "#808080",
+                                    "size": "sm",
+                                    "color": "#10b981" if counts['الله أكبر'] >= 33 else "#6b7280",
                                     "align": "end",
-                                    "flex": 1
+                                    "flex": 1,
+                                    "weight": "bold"
                                 }
                             ],
-                            "margin": "sm"
+                            "paddingAll": "10px",
+                            "backgroundColor": "#ffffff10" if counts['الله أكبر'] >= 33 else "#00000020",
+                            "cornerRadius": "8px",
+                            "margin": "xs"
                         }
                     ],
                     "margin": "lg",
-                    "paddingAll": "12px",
-                    "backgroundColor": "#1a1a1a",
-                    "cornerRadius": "8px"
+                    "spacing": "none"
                 },
+                # أزرار التسبيح
                 {
                     "type": "box",
                     "layout": "vertical",
@@ -294,10 +385,9 @@ def create_tasbih_flex(user_id):
                                         "label": "استغفر الله",
                                         "data": f"tasbih_استغفر الله_{user_id}"
                                     },
-                                    "style": "secondary",
-                                    "color": "#404040",
-                                    "height": "sm",
-                                    "flex": 1
+                                    "style": "primary",
+                                    "color": main_color,
+                                    "height": "sm"
                                 },
                                 {
                                     "type": "button",
@@ -306,13 +396,12 @@ def create_tasbih_flex(user_id):
                                         "label": "سبحان الله",
                                         "data": f"tasbih_سبحان الله_{user_id}"
                                     },
-                                    "style": "secondary",
-                                    "color": "#404040",
-                                    "height": "sm",
-                                    "flex": 1
+                                    "style": "primary",
+                                    "color": main_color,
+                                    "height": "sm"
                                 }
                             ],
-                            "spacing": "xs"
+                            "spacing": "sm"
                         },
                         {
                             "type": "box",
@@ -325,10 +414,9 @@ def create_tasbih_flex(user_id):
                                         "label": "الحمد لله",
                                         "data": f"tasbih_الحمد لله_{user_id}"
                                     },
-                                    "style": "secondary",
-                                    "color": "#404040",
-                                    "height": "sm",
-                                    "flex": 1
+                                    "style": "primary",
+                                    "color": main_color,
+                                    "height": "sm"
                                 },
                                 {
                                     "type": "button",
@@ -337,38 +425,39 @@ def create_tasbih_flex(user_id):
                                         "label": "الله أكبر",
                                         "data": f"tasbih_الله أكبر_{user_id}"
                                     },
-                                    "style": "secondary",
-                                    "color": "#404040",
-                                    "height": "sm",
-                                    "flex": 1
+                                    "style": "primary",
+                                    "color": main_color,
+                                    "height": "sm"
                                 }
                             ],
-                            "spacing": "xs",
-                            "margin": "xs"
+                            "spacing": "sm",
+                            "margin": "sm"
                         }
                     ],
                     "margin": "lg"
                 },
+                # Footer
                 {
                     "type": "separator",
-                    "margin": "md",
-                    "color": "#303030"
+                    "margin": "lg",
+                    "color": "#30303080"
                 },
                 {
                     "type": "text",
-                    "text": "تم إنشاء هذا البوت بواسطة عبير الدوسري @ 2025",
+                    "text": "© 2025 عبير الدوسري",
                     "size": "xxs",
                     "color": "#606060",
                     "align": "center",
-                    "margin": "sm"
+                    "margin": "md"
                 }
             ],
-            "paddingAll": "16px",
-            "backgroundColor": "#0a0a0a"
+            "paddingAll": "18px",
+            "backgroundColor": "#0f0f0f",
+            "spacing": "none"
         }
     }
     
-    return FlexMessage(alt_text="التسبيح", contents=FlexContainer.from_dict(flex_content))
+    return FlexMessage(alt_text="التسبيح الإلكتروني", contents=FlexContainer.from_dict(flex_content))
 
 def normalize_tasbih(text):
     text = text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("ة", "ه")
@@ -457,7 +546,7 @@ def handle_message(event):
             return
 
         if text_lower == "مساعدة":
-            help_text = "بوت 85\n\nذكرني - ذكر أو دعاء\nفضل - فضل العبادات\nتسبيح - نافذة التسبيح"
+            help_text = "بوت 85\n\nتسبيح - نافذة التسبيح التفاعلية\nفضل - فضل العبادات\nذكرني - ذكر أو دعاء عشوائي"
             reply_message(event.reply_token, help_text)
             return
 
@@ -489,7 +578,7 @@ def handle_message(event):
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
-    """رد نصي فقط - بدون نوافذ متكررة"""
+    """معالجة الضغط على أزرار التسبيح"""
     try:
         data = event.postback.data
         
@@ -508,19 +597,17 @@ def handle_postback(event):
                 counts[tasbih_text] += 1
                 save_data()
                 
-                # رد نصي بسيط فقط
                 count_now = counts[tasbih_text]
                 reply_message(event.reply_token, f"{tasbih_text} ({count_now}/33)")
                 
-                # رسائل الاكتمال
                 if count_now == TASBIH_LIMITS:
                     time.sleep(0.5)
                     target_id = getattr(event.source, "group_id", None) or user_id
-                    send_message(target_id, f"✓ اكتمل {tasbih_text}")
+                    send_message(target_id, f"اكتمل {tasbih_text} - بارك الله فيك")
                     
                     if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
                         time.sleep(0.5)
-                        send_message(target_id, "✓ اكتملت الأذكار الأربعة\nجزاك الله خيراً")
+                        send_message(target_id, "اكتملت جميع الأذكار الأربعة\nجزاك الله خيراً")
             else:
                 reply_message(event.reply_token, f"{tasbih_text} مكتمل (33/33)")
     
