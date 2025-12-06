@@ -3,9 +3,10 @@ from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
     Configuration, ApiClient, MessagingApi,
-    ReplyMessageRequest, PushMessageRequest, TextMessage
+    ReplyMessageRequest, PushMessageRequest, 
+    TextMessage, FlexMessage, FlexContainer
 )
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
+from linebot.v3.webhooks import MessageEvent, TextMessageContent, PostbackEvent
 import os, random, json, threading, time, logging
 from datetime import datetime
 import pytz
@@ -73,22 +74,28 @@ def get_adhkar_message(adhkar_list, title):
         msg += f"{a}\n\n"
     return msg.strip()
 
-def send_message(target_id, text):
+def send_message(target_id, message):
     try:
         with ApiClient(configuration) as api_client:
             api = MessagingApi(api_client)
-            api.push_message(PushMessageRequest(to=target_id, messages=[TextMessage(text=text)]))
+            if isinstance(message, str):
+                api.push_message(PushMessageRequest(to=target_id, messages=[TextMessage(text=message)]))
+            else:
+                api.push_message(PushMessageRequest(to=target_id, messages=[message]))
         return True
     except Exception as e:
         if "400" not in str(e) and "403" not in str(e):
             logger.error(f"ارسال فشل {target_id}: {e}")
         return False
 
-def reply_message(reply_token, text):
+def reply_message(reply_token, message):
     try:
         with ApiClient(configuration) as api_client:
             api = MessagingApi(api_client)
-            api.reply_message(ReplyMessageRequest(reply_token=reply_token, messages=[TextMessage(text=text)]))
+            if isinstance(message, str):
+                api.reply_message(ReplyMessageRequest(reply_token=reply_token, messages=[TextMessage(text=message)]))
+            else:
+                api.reply_message(ReplyMessageRequest(reply_token=reply_token, messages=[message]))
         return True
     except Exception as e:
         logger.error(f"رد فشل: {e}")
@@ -134,10 +141,119 @@ def ensure_user_counts(uid):
         tasbih_counts[uid] = {key: 0 for key in TASBIH_KEYS}
         save_data()
 
-def get_tasbih_status(user_id, gid=None):
-    counts = tasbih_counts[user_id]
-    name = get_group_member_name(gid, user_id) if gid else get_user_name(user_id)
-    return f"حالة التسبيح\n{name}\n\nاستغفر الله: {counts['استغفر الله']}/33\nسبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
+def create_tasbih_flex(user_id):
+    """إنشاء نافذة Flex احترافية للتسبيح"""
+    counts = tasbih_counts.get(user_id, {key: 0 for key in TASBIH_KEYS})
+    
+    flex_content = {
+        "type": "bubble",
+        "size": "mega",
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "التسبيح",
+                    "weight": "bold",
+                    "size": "xl",
+                    "align": "center",
+                    "color": "#000000",
+                    "margin": "md"
+                },
+                {
+                    "type": "separator",
+                    "margin": "lg",
+                    "color": "#DDDDDD"
+                },
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "margin": "xl",
+                    "spacing": "md",
+                    "contents": [
+                        create_tasbih_item("استغفر الله", counts.get("استغفر الله", 0)),
+                        create_tasbih_item("سبحان الله", counts.get("سبحان الله", 0)),
+                        create_tasbih_item("الحمد لله", counts.get("الحمد لله", 0)),
+                        create_tasbih_item("الله أكبر", counts.get("الله أكبر", 0))
+                    ]
+                }
+            ],
+            "paddingAll": "20px",
+            "backgroundColor": "#FFFFFF"
+        }
+    }
+    
+    return FlexMessage(alt_text="التسبيح", contents=FlexContainer.from_dict(flex_content))
+
+def create_tasbih_item(text, count):
+    """إنشاء عنصر تسبيح واحد مع زر"""
+    is_complete = count >= 33
+    
+    return {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+            {
+                "type": "box",
+                "layout": "horizontal",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": text,
+                        "size": "lg",
+                        "weight": "bold",
+                        "color": "#000000" if not is_complete else "#666666",
+                        "flex": 3
+                    },
+                    {
+                        "type": "text",
+                        "text": f"{count}/33",
+                        "size": "md",
+                        "color": "#000000" if not is_complete else "#00AA00",
+                        "align": "end",
+                        "weight": "bold",
+                        "flex": 1
+                    }
+                ]
+            },
+            {
+                "type": "box",
+                "layout": "horizontal",
+                "contents": [
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "contents": [],
+                        "width": f"{int((count/33)*100)}%",
+                        "backgroundColor": "#000000" if not is_complete else "#00AA00",
+                        "height": "6px"
+                    }
+                ],
+                "backgroundColor": "#EEEEEE",
+                "height": "6px",
+                "margin": "sm"
+            },
+            {
+                "type": "button",
+                "action": {
+                    "type": "postback",
+                    "label": "✓" if is_complete else "+1",
+                    "data": f"tasbih_{text}",
+                    "displayText": text
+                },
+                "style": "primary" if not is_complete else "secondary",
+                "color": "#000000" if not is_complete else "#AAAAAA",
+                "margin": "sm",
+                "height": "sm"
+            }
+        ],
+        "spacing": "xs",
+        "margin": "md",
+        "paddingAll": "12px",
+        "backgroundColor": "#F8F8F8" if not is_complete else "#F0F0F0",
+        "cornerRadius": "8px"
+    }
 
 def normalize_tasbih(text):
     text = text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("ة", "ه")
@@ -210,12 +326,10 @@ def handle_message(event):
         if user_id not in target_users:
             target_users.add(user_id)
             save_data()
-            logger.info(f"مستخدم جديد: {user_id}")
 
         if gid and gid not in target_groups:
             target_groups.add(gid)
             save_data()
-            logger.info(f"مجموعة جديدة: {gid}")
 
         ensure_user_counts(user_id)
 
@@ -223,7 +337,6 @@ def handle_message(event):
             return
 
         if not is_valid_command(user_text):
-            logger.info(f"تجاهل: {user_text[:30]}")
             return
 
         text_lower = user_text.lower()
@@ -233,7 +346,7 @@ def handle_message(event):
             return
 
         if text_lower == "مساعدة":
-            help_text = "الأوامر:\n\n-ذكرني\nذكر/دعاء/حديث/آية\n\n-فضل\nفضل العبادات\n\n-تسبيح\nحالة التسبيح\n\nسبحان الله / الحمد لله / الله أكبر / استغفر الله\nزيادة العداد حتى 33"
+            help_text = "الأوامر:\n\n-ذكرني\nذكر/دعاء/حديث/آية\n\n-فضل\nفضل العبادات\n\n-تسبيح\nنافذة التسبيح التفاعلية"
             reply_message(event.reply_token, help_text)
             return
 
@@ -242,26 +355,8 @@ def handle_message(event):
             return
 
         if text_lower == "تسبيح":
-            reply_message(event.reply_token, get_tasbih_status(user_id, gid))
-            return
-
-        normalized = normalize_tasbih(user_text)
-        if normalized:
-            counts = tasbih_counts[user_id]
-            if counts[normalized] >= TASBIH_LIMITS:
-                reply_message(event.reply_token, f"تم اكتمال {normalized} مسبقا")
-                return
-            
-            counts[normalized] += 1
-            save_data()
-
-            if counts[normalized] == TASBIH_LIMITS:
-                reply_message(event.reply_token, f"تم اكتمال {normalized}")
-                if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
-                    send_message(user_id, "تم اكتمال التسبيحات الأربعة، جزاك الله خيراً")
-                return
-            
-            reply_message(event.reply_token, get_tasbih_status(user_id, gid))
+            flex_msg = create_tasbih_flex(user_id)
+            reply_message(event.reply_token, flex_msg)
             return
 
         if text_lower == "ذكرني":
@@ -282,16 +377,52 @@ def handle_message(event):
     except Exception as e:
         logger.error(f"خطأ معالجة: {e}")
 
+@handler.add(PostbackEvent)
+def handle_postback(event):
+    """معالجة ضغط أزرار التسبيح"""
+    try:
+        user_id = event.source.user_id
+        data = event.postback.data
+        
+        if data.startswith("tasbih_"):
+            tasbih_text = data.replace("tasbih_", "")
+            
+            ensure_user_counts(user_id)
+            counts = tasbih_counts[user_id]
+            
+            if counts[tasbih_text] >= TASBIH_LIMITS:
+                reply_message(event.reply_token, f"تم اكتمال {tasbih_text} مسبقاً")
+                return
+            
+            counts[tasbih_text] += 1
+            save_data()
+            
+            # إرسال نافذة محدثة
+            flex_msg = create_tasbih_flex(user_id)
+            reply_message(event.reply_token, flex_msg)
+            
+            # التحقق من الاكتمال
+            if counts[tasbih_text] == TASBIH_LIMITS:
+                time.sleep(0.5)
+                send_message(user_id, f"تم اكتمال {tasbih_text}")
+                
+                # التحقق من اكتمال الأربعة
+                if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
+                    time.sleep(0.5)
+                    send_message(user_id, "تم اكتمال الأذكار الأربعة\nجزاك الله خيراً")
+    
+    except Exception as e:
+        logger.error(f"خطأ postback: {e}")
+
 def remind_all_on_start():
     try:
         time.sleep(10)
-        logger.info("تشغيل ذكرني تلقائي...")
         category = random.choice(["duas", "adhkar", "hadiths", "quran"])
         messages = content.get(category, [])
         if messages:
             broadcast_text(random.choice(messages))
     except Exception as e:
-        logger.error(f"خطأ بدء تشغيل: {e}")
+        logger.error(f"خطأ بدء: {e}")
 
 @app.route("/", methods=["GET"])
 def home():
@@ -308,7 +439,6 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        logger.warning("توقيع غير صالح")
         return "Invalid signature", 400
     except Exception as e:
         logger.error(f"خطأ webhook: {e}")
@@ -330,6 +460,5 @@ def reminder():
 
 if __name__ == "__main__":
     logger.info(f"بدء التشغيل - المنفذ {PORT}")
-    logger.info(f"مستخدمين: {len(target_users)}, مجموعات: {len(target_groups)}")
     threading.Thread(target=remind_all_on_start, daemon=True).start()
     app.run(host="0.0.0.0", port=PORT)
