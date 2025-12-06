@@ -194,51 +194,42 @@ def create_tasbih_flex(user_id):
             "contents": [
                 {
                     "type": "text",
-                    "text": "لَا إِلَهَ إِلَّا اللَّهُ",
+                    "text": "بوت 85",
                     "size": "md",
                     "align": "center",
                     "color": "#ffffff",
-                    "weight": "bold"
+                    "weight": "bold",
+                    "margin": "none"
                 },
                 {
                     "type": "box",
                     "layout": "vertical",
                     "contents": [
                         {
-                            "type": "box",
-                            "layout": "vertical",
-                            "contents": [
-                                {
-                                    "type": "text",
-                                    "text": str(total),
-                                    "size": "4xl",
-                                    "align": "center",
-                                    "color": "#ffffff",
-                                    "weight": "bold"
-                                },
-                                {
-                                    "type": "text",
-                                    "text": f"{percentage}%",
-                                    "size": "xs",
-                                    "align": "center",
-                                    "color": "#cccccc",
-                                    "margin": "xs"
-                                }
-                            ]
+                            "type": "text",
+                            "text": str(total),
+                            "size": "5xl",
+                            "align": "center",
+                            "color": "#ffffff",
+                            "weight": "bold"
+                        },
+                        {
+                            "type": "text",
+                            "text": f"{percentage}%",
+                            "size": "sm",
+                            "align": "center",
+                            "color": "#cccccc",
+                            "margin": "sm"
                         }
                     ],
                     "margin": "lg",
-                    "paddingAll": "20px",
+                    "paddingAll": "30px",
                     "cornerRadius": "100px",
                     "borderWidth": "3px",
                     "borderColor": "#ffffff",
-                    "width": "150px",
-                    "height": "150px",
-                    "justifyContent": "center",
-                    "alignItems": "center",
-                    "offsetStart": "50%",
-                    "offsetTop": "0px",
-                    "position": "relative"
+                    "width": "180px",
+                    "height": "180px",
+                    "justifyContent": "center"
                 },
                 {
                     "type": "box",
@@ -273,7 +264,7 @@ def create_tasbih_flex(user_id):
                                     "flex": 1
                                 }
                             ],
-                            "spacing": "xs"
+                            "spacing": "sm"
                         },
                         {
                             "type": "box",
@@ -304,34 +295,20 @@ def create_tasbih_flex(user_id):
                                     "flex": 1
                                 }
                             ],
-                            "spacing": "xs",
-                            "margin": "xs"
+                            "spacing": "sm",
+                            "margin": "sm"
                         },
                         {
                             "type": "separator",
-                            "margin": "md",
+                            "margin": "lg",
                             "color": "#444444"
                         },
                         {
-                            "type": "box",
-                            "layout": "horizontal",
-                            "contents": [
-                                {
-                                    "type": "text",
-                                    "text": "بوت 85",
-                                    "size": "xxs",
-                                    "color": "#888888",
-                                    "flex": 1
-                                },
-                                {
-                                    "type": "text",
-                                    "text": "عبير الدوسري 2025",
-                                    "size": "xxs",
-                                    "color": "#888888",
-                                    "align": "end",
-                                    "flex": 1
-                                }
-                            ],
+                            "type": "text",
+                            "text": "عبير الدوسري 2025",
+                            "size": "xxs",
+                            "color": "#888888",
+                            "align": "center",
                             "margin": "md"
                         }
                     ],
@@ -557,7 +534,7 @@ def handle_message(event):
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
-    """معالجة ضغط الأزرار بدون رسائل في الشات"""
+    """معالجة ضغط الأزرار - تحديث صامت"""
     try:
         user_id = event.source.user_id
         data = event.postback.data
@@ -568,22 +545,27 @@ def handle_postback(event):
             ensure_user_counts(user_id)
             counts = tasbih_counts[user_id]
             
+            # حفظ الحالة السابقة
+            was_complete = counts[tasbih_text] >= TASBIH_LIMITS
+            
+            # زيادة العدد
             if counts[tasbih_text] < TASBIH_LIMITS:
                 counts[tasbih_text] += 1
                 save_data()
             
-            # إرسال نافذة محدثة فقط
-            flex_msg = create_tasbih_flex(user_id)
-            reply_message(event.reply_token, flex_msg)
-            
-            # إرسال رسالة فقط عند الاكتمال
-            if counts[tasbih_text] == TASBIH_LIMITS:
-                time.sleep(0.5)
-                send_message(user_id, f"تم اكتمال {tasbih_text}")
+            # إرسال رسالة نصية فقط عند الاكتمال
+            if counts[tasbih_text] == TASBIH_LIMITS and not was_complete:
+                reply_message(event.reply_token, f"تم اكتمال {tasbih_text}")
                 
                 if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
                     time.sleep(0.5)
                     send_message(user_id, "تم اكتمال الأذكار الأربعة\nجزاك الله خيراً")
+            else:
+                # رد فارغ لتجنب خطأ الرد
+                try:
+                    reply_message(event.reply_token, ".")
+                except:
+                    pass
         
         elif data.startswith("timezone_"):
             city = data.replace("timezone_", "")
