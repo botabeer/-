@@ -39,20 +39,46 @@ def load_json(file, default):
 def save_data():
     try:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({"users": list(target_users), "groups": list(target_groups), "tasbih": tasbih_counts}, f, ensure_ascii=False, indent=2)
+            json.dump({
+                "users": list(target_users), 
+                "groups": list(target_groups), 
+                "tasbih": tasbih_counts,
+                "timezones": user_timezones
+            }, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error(f"خطأ حفظ: {e}")
 
-data = load_json(DATA_FILE, {"users": [], "groups": [], "tasbih": {}})
+data = load_json(DATA_FILE, {"users": [], "groups": [], "tasbih": {}, "timezones": {}})
 target_users = set(data.get("users", []))
 target_groups = set(data.get("groups", []))
 tasbih_counts = data.get("tasbih", {})
+user_timezones = data.get("timezones", {})
 
 content = load_json(CONTENT_FILE, {"duas": [], "adhkar": [], "hadiths": [], "quran": []})
 fadl_content = load_json("fadl.json", {"fadl": []}).get("fadl", [])
 morning_adhkar = load_json("morning_adhkar.json", {"adhkar": []}).get("adhkar", [])
 evening_adhkar = load_json("evening_adhkar.json", {"adhkar": []}).get("adhkar", [])
 sleep_adhkar = load_json("sleep_adhkar.json", {"adhkar": []}).get("adhkar", [])
+
+TIMEZONES = {
+    "الرياض": "Asia/Riyadh",
+    "مكة": "Asia/Riyadh",
+    "المدينة": "Asia/Riyadh",
+    "جدة": "Asia/Riyadh",
+    "الدمام": "Asia/Riyadh",
+    "دبي": "Asia/Dubai",
+    "أبوظبي": "Asia/Dubai",
+    "الكويت": "Asia/Kuwait",
+    "الدوحة": "Asia/Qatar",
+    "المنامة": "Asia/Bahrain",
+    "مسقط": "Asia/Muscat",
+    "القاهرة": "Africa/Cairo",
+    "بيروت": "Asia/Beirut",
+    "عمان": "Asia/Amman",
+    "دمشق": "Asia/Damascus",
+    "بغداد": "Asia/Baghdad",
+    "صنعاء": "Asia/Aden"
+}
 
 fadl_index = 0
 TASBIH_LIMITS = 33
@@ -142,12 +168,12 @@ def ensure_user_counts(uid):
         save_data()
 
 def create_tasbih_flex(user_id):
-    """إنشاء نافذة Flex احترافية للتسبيح"""
+    """إنشاء نافذة تسبيح أنيقة ومريحة"""
     counts = tasbih_counts.get(user_id, {key: 0 for key in TASBIH_KEYS})
     
     flex_content = {
         "type": "bubble",
-        "size": "mega",
+        "size": "kilo",
         "body": {
             "type": "box",
             "layout": "vertical",
@@ -156,21 +182,20 @@ def create_tasbih_flex(user_id):
                     "type": "text",
                     "text": "التسبيح",
                     "weight": "bold",
-                    "size": "xl",
+                    "size": "lg",
                     "align": "center",
-                    "color": "#000000",
-                    "margin": "md"
+                    "color": "#1a1a1a"
                 },
                 {
                     "type": "separator",
-                    "margin": "lg",
-                    "color": "#DDDDDD"
+                    "margin": "md",
+                    "color": "#e0e0e0"
                 },
                 {
                     "type": "box",
                     "layout": "vertical",
-                    "margin": "xl",
-                    "spacing": "md",
+                    "margin": "lg",
+                    "spacing": "sm",
                     "contents": [
                         create_tasbih_item("استغفر الله", counts.get("استغفر الله", 0)),
                         create_tasbih_item("سبحان الله", counts.get("سبحان الله", 0)),
@@ -179,16 +204,17 @@ def create_tasbih_flex(user_id):
                     ]
                 }
             ],
-            "paddingAll": "20px",
-            "backgroundColor": "#FFFFFF"
+            "paddingAll": "16px",
+            "backgroundColor": "#fafafa"
         }
     }
     
     return FlexMessage(alt_text="التسبيح", contents=FlexContainer.from_dict(flex_content))
 
 def create_tasbih_item(text, count):
-    """إنشاء عنصر تسبيح واحد مع زر"""
+    """إنشاء عنصر تسبيح أنيق"""
     is_complete = count >= 33
+    progress = min(int((count/33)*100), 100)
     
     return {
         "type": "box",
@@ -201,18 +227,17 @@ def create_tasbih_item(text, count):
                     {
                         "type": "text",
                         "text": text,
-                        "size": "lg",
+                        "size": "md",
                         "weight": "bold",
-                        "color": "#000000" if not is_complete else "#666666",
-                        "flex": 3
+                        "color": "#2c3e50" if not is_complete else "#27ae60",
+                        "flex": 2
                     },
                     {
                         "type": "text",
                         "text": f"{count}/33",
-                        "size": "md",
-                        "color": "#000000" if not is_complete else "#00AA00",
+                        "size": "sm",
+                        "color": "#7f8c8d" if not is_complete else "#27ae60",
                         "align": "end",
-                        "weight": "bold",
                         "flex": 1
                     }
                 ]
@@ -225,35 +250,104 @@ def create_tasbih_item(text, count):
                         "type": "box",
                         "layout": "vertical",
                         "contents": [],
-                        "width": f"{int((count/33)*100)}%",
-                        "backgroundColor": "#000000" if not is_complete else "#00AA00",
-                        "height": "6px"
+                        "width": f"{progress}%",
+                        "backgroundColor": "#3498db" if not is_complete else "#27ae60",
+                        "height": "4px",
+                        "cornerRadius": "2px"
                     }
                 ],
-                "backgroundColor": "#EEEEEE",
-                "height": "6px",
-                "margin": "sm"
+                "backgroundColor": "#ecf0f1",
+                "height": "4px",
+                "margin": "xs",
+                "cornerRadius": "2px"
             },
             {
                 "type": "button",
                 "action": {
                     "type": "postback",
-                    "label": "✓" if is_complete else "+1",
+                    "label": "تم" if is_complete else "+1",
                     "data": f"tasbih_{text}",
                     "displayText": text
                 },
                 "style": "primary" if not is_complete else "secondary",
-                "color": "#000000" if not is_complete else "#AAAAAA",
-                "margin": "sm",
+                "color": "#3498db" if not is_complete else "#95a5a6",
+                "margin": "xs",
                 "height": "sm"
             }
         ],
         "spacing": "xs",
-        "margin": "md",
-        "paddingAll": "12px",
-        "backgroundColor": "#F8F8F8" if not is_complete else "#F0F0F0",
-        "cornerRadius": "8px"
+        "margin": "sm",
+        "paddingAll": "10px",
+        "backgroundColor": "#ffffff",
+        "cornerRadius": "6px"
     }
+
+def create_timezone_flex():
+    """إنشاء نافذة اختيار المنطقة"""
+    cities = list(TIMEZONES.keys())
+    buttons = []
+    
+    for i in range(0, len(cities), 2):
+        row = {
+            "type": "box",
+            "layout": "horizontal",
+            "contents": [],
+            "spacing": "xs"
+        }
+        
+        for j in range(2):
+            if i + j < len(cities):
+                city = cities[i + j]
+                row["contents"].append({
+                    "type": "button",
+                    "action": {
+                        "type": "postback",
+                        "label": city,
+                        "data": f"timezone_{city}",
+                        "displayText": f"اخترت {city}"
+                    },
+                    "style": "primary",
+                    "color": "#3498db",
+                    "height": "sm",
+                    "flex": 1
+                })
+        
+        buttons.append(row)
+    
+    flex_content = {
+        "type": "bubble",
+        "size": "kilo",
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "اختر منطقتك",
+                    "weight": "bold",
+                    "size": "lg",
+                    "align": "center",
+                    "color": "#1a1a1a"
+                },
+                {
+                    "type": "separator",
+                    "margin": "md",
+                    "color": "#e0e0e0"
+                },
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "margin": "lg",
+                    "spacing": "xs",
+                    "contents": buttons
+                }
+            ],
+            "paddingAll": "16px",
+            "backgroundColor": "#fafafa"
+        }
+    }
+    
+    return FlexMessage(alt_text="اختر منطقتك", contents=FlexContainer.from_dict(flex_content))
 
 def normalize_tasbih(text):
     text = text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("ة", "ه")
@@ -308,7 +402,7 @@ def check_salam(text):
     salam = ["السلام عليكم", "سلام عليكم", "السلام", "سلام", "عليكم السلام"]
     return any(s in text.lower() for s in salam)
 
-VALID_COMMANDS = ["مساعدة", "فضل", "تسبيح", "استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر", "ذكرني"]
+VALID_COMMANDS = ["مساعدة", "فضل", "تسبيح", "استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر", "ذكرني", "منطقة", "معلومات"]
 
 def is_valid_command(text):
     txt = text.lower().strip()
@@ -346,8 +440,13 @@ def handle_message(event):
             return
 
         if text_lower == "مساعدة":
-            help_text = "الأوامر:\n\n-ذكرني\nذكر/دعاء/حديث/آية\n\n-فضل\nفضل العبادات\n\n-تسبيح\nنافذة التسبيح التفاعلية"
+            help_text = "بوت 85 - دليل الاستخدام\n\nذكرني - ذكر أو دعاء أو حديث أو آية\n\nفضل - فضل العبادات\n\nتسبيح - نافذة التسبيح التفاعلية\n\nمنطقة - اختيار منطقتك\n\nمعلومات - معلومات البوت"
             reply_message(event.reply_token, help_text)
+            return
+
+        if text_lower == "معلومات":
+            info_text = "بوت 85\n\nبوت إسلامي شامل للأذكار والأدعية\n\nتم إنشاء هذا البوت بواسطة\nعبير الدوسري\n2025"
+            reply_message(event.reply_token, info_text)
             return
 
         if text_lower == "فضل":
@@ -356,6 +455,11 @@ def handle_message(event):
 
         if text_lower == "تسبيح":
             flex_msg = create_tasbih_flex(user_id)
+            reply_message(event.reply_token, flex_msg)
+            return
+
+        if text_lower == "منطقة":
+            flex_msg = create_timezone_flex()
             reply_message(event.reply_token, flex_msg)
             return
 
@@ -379,7 +483,7 @@ def handle_message(event):
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
-    """معالجة ضغط أزرار التسبيح"""
+    """معالجة ضغط الأزرار"""
     try:
         user_id = event.source.user_id
         data = event.postback.data
@@ -391,25 +495,28 @@ def handle_postback(event):
             counts = tasbih_counts[user_id]
             
             if counts[tasbih_text] >= TASBIH_LIMITS:
-                reply_message(event.reply_token, f"تم اكتمال {tasbih_text} مسبقاً")
+                reply_message(event.reply_token, f"تم اكتمال {tasbih_text}")
                 return
             
             counts[tasbih_text] += 1
             save_data()
             
-            # إرسال نافذة محدثة
             flex_msg = create_tasbih_flex(user_id)
             reply_message(event.reply_token, flex_msg)
             
-            # التحقق من الاكتمال
             if counts[tasbih_text] == TASBIH_LIMITS:
                 time.sleep(0.5)
                 send_message(user_id, f"تم اكتمال {tasbih_text}")
                 
-                # التحقق من اكتمال الأربعة
                 if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
                     time.sleep(0.5)
                     send_message(user_id, "تم اكتمال الأذكار الأربعة\nجزاك الله خيراً")
+        
+        elif data.startswith("timezone_"):
+            city = data.replace("timezone_", "")
+            user_timezones[user_id] = TIMEZONES.get(city, "Asia/Riyadh")
+            save_data()
+            reply_message(event.reply_token, f"تم اختيار {city}")
     
     except Exception as e:
         logger.error(f"خطأ postback: {e}")
@@ -426,7 +533,7 @@ def remind_all_on_start():
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot Active", 200
+    return "بوت 85 نشط", 200
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -459,6 +566,6 @@ def reminder():
         return jsonify({"status": "error"}), 500
 
 if __name__ == "__main__":
-    logger.info(f"بدء التشغيل - المنفذ {PORT}")
+    logger.info(f"بوت 85 - المنفذ {PORT}")
     threading.Thread(target=remind_all_on_start, daemon=True).start()
     app.run(host="0.0.0.0", port=PORT)
