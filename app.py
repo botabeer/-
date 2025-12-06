@@ -40,47 +40,21 @@ def save_data():
     try:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump({
-                "users": list(target_users), 
                 "groups": list(target_groups), 
-                "tasbih": tasbih_counts,
-                "timezones": user_timezones,
-                "notifications": notification_settings
+                "tasbih": tasbih_counts
             }, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error(f"خطأ حفظ: {e}")
 
-data = load_json(DATA_FILE, {"users": [], "groups": [], "tasbih": {}, "timezones": {}, "notifications": {}})
-target_users = set(data.get("users", []))
+data = load_json(DATA_FILE, {"groups": [], "tasbih": {}})
 target_groups = set(data.get("groups", []))
 tasbih_counts = data.get("tasbih", {})
-user_timezones = data.get("timezones", {})
-notification_settings = data.get("notifications", {})
 
 content = load_json(CONTENT_FILE, {"duas": [], "adhkar": [], "hadiths": [], "quran": []})
 fadl_content = load_json("fadl.json", {"fadl": []}).get("fadl", [])
 morning_adhkar = load_json("morning_adhkar.json", {"adhkar": []}).get("adhkar", [])
 evening_adhkar = load_json("evening_adhkar.json", {"adhkar": []}).get("adhkar", [])
 sleep_adhkar = load_json("sleep_adhkar.json", {"adhkar": []}).get("adhkar", [])
-
-TIMEZONES = {
-    "الرياض": "Asia/Riyadh",
-    "مكة": "Asia/Riyadh",
-    "المدينة": "Asia/Riyadh",
-    "جدة": "Asia/Riyadh",
-    "الدمام": "Asia/Riyadh",
-    "دبي": "Asia/Dubai",
-    "أبوظبي": "Asia/Dubai",
-    "الكويت": "Asia/Kuwait",
-    "الدوحة": "Asia/Qatar",
-    "المنامة": "Asia/Bahrain",
-    "مسقط": "Asia/Muscat",
-    "القاهرة": "Africa/Cairo",
-    "بيروت": "Asia/Beirut",
-    "عمان": "Asia/Amman",
-    "دمشق": "Asia/Damascus",
-    "بغداد": "Asia/Baghdad",
-    "صنعاء": "Asia/Aden"
-}
 
 fadl_index = 0
 TASBIH_LIMITS = 33
@@ -98,16 +72,12 @@ def get_adhkar_message(adhkar_list, title):
     if not adhkar_list:
         return f"{title}\n\nلا يوجد أذكار"
     msg = f"{title}\n\n"
-    for a in adhkar_list:
+    for a in adhkar_list[:5]:  # أول 5 أذكار فقط لتوفير الرسائل
         msg += f"{a}\n\n"
     return msg.strip()
 
 def send_message(target_id, message):
     try:
-        # تحقق من إعدادات الإشعارات
-        if target_id in notification_settings and not notification_settings[target_id]:
-            return True
-        
         with ApiClient(configuration) as api_client:
             api = MessagingApi(api_client)
             if isinstance(message, str):
@@ -133,31 +103,15 @@ def reply_message(reply_token, message):
         logger.error(f"رد فشل: {e}")
         return False
 
-def broadcast_text(text, exclude_user=None, exclude_group=None):
+def broadcast_text(text):
     sent, failed = 0, 0
-    for uid in list(target_users):
-        if uid != exclude_user:
-            if send_message(uid, text):
-                sent += 1
-            else:
-                failed += 1
     for gid in list(target_groups):
-        if gid != exclude_group:
-            if send_message(gid, text):
-                sent += 1
-            else:
-                failed += 1
+        if send_message(gid, text):
+            sent += 1
+        else:
+            failed += 1
     logger.info(f"ارسال: {sent} نجح، {failed} فشل")
     return sent, failed
-
-def get_user_name(user_id):
-    try:
-        with ApiClient(configuration) as api_client:
-            api = MessagingApi(api_client)
-            profile = api.get_profile(user_id)
-            return profile.display_name
-    except:
-        return "المستخدم"
 
 def get_group_member_name(group_id, user_id):
     try:
@@ -171,9 +125,6 @@ def get_group_member_name(group_id, user_id):
 def ensure_user_counts(uid):
     if uid not in tasbih_counts:
         tasbih_counts[uid] = {key: 0 for key in TASBIH_KEYS}
-        save_data()
-    if uid not in notification_settings:
-        notification_settings[uid] = True
         save_data()
 
 def create_tasbih_flex(user_id):
@@ -195,7 +146,7 @@ def create_tasbih_flex(user_id):
                 {
                     "type": "text",
                     "text": "بوت 85",
-                    "size": "md",
+                    "size": "lg",
                     "align": "center",
                     "color": "#ffffff",
                     "weight": "bold",
@@ -222,13 +173,13 @@ def create_tasbih_flex(user_id):
                             "margin": "sm"
                         }
                     ],
-                    "margin": "lg",
-                    "paddingAll": "30px",
+                    "margin": "xl",
+                    "paddingAll": "35px",
                     "cornerRadius": "100px",
                     "borderWidth": "3px",
                     "borderColor": "#ffffff",
-                    "width": "180px",
-                    "height": "180px",
+                    "width": "190px",
+                    "height": "190px",
                     "justifyContent": "center"
                 },
                 {
@@ -244,7 +195,7 @@ def create_tasbih_flex(user_id):
                                     "action": {
                                         "type": "postback",
                                         "label": "استغفر الله",
-                                        "data": "tasbih_استغفر الله"
+                                        "data": f"tasbih_استغفر الله_{user_id}"
                                     },
                                     "style": "secondary",
                                     "color": "#ffffff",
@@ -256,7 +207,7 @@ def create_tasbih_flex(user_id):
                                     "action": {
                                         "type": "postback",
                                         "label": "سبحان الله",
-                                        "data": "tasbih_سبحان الله"
+                                        "data": f"tasbih_سبحان الله_{user_id}"
                                     },
                                     "style": "secondary",
                                     "color": "#ffffff",
@@ -275,7 +226,7 @@ def create_tasbih_flex(user_id):
                                     "action": {
                                         "type": "postback",
                                         "label": "الحمد لله",
-                                        "data": "tasbih_الحمد لله"
+                                        "data": f"tasbih_الحمد لله_{user_id}"
                                     },
                                     "style": "secondary",
                                     "color": "#ffffff",
@@ -287,7 +238,7 @@ def create_tasbih_flex(user_id):
                                     "action": {
                                         "type": "postback",
                                         "label": "الله أكبر",
-                                        "data": "tasbih_الله أكبر"
+                                        "data": f"tasbih_الله أكبر_{user_id}"
                                     },
                                     "style": "secondary",
                                     "color": "#ffffff",
@@ -309,7 +260,8 @@ def create_tasbih_flex(user_id):
                             "size": "xxs",
                             "color": "#888888",
                             "align": "center",
-                            "margin": "md"
+                            "margin": "md",
+                            "wrap": True
                         }
                     ],
                     "margin": "xl"
@@ -322,78 +274,13 @@ def create_tasbih_flex(user_id):
     
     return FlexMessage(alt_text="التسبيح", contents=FlexContainer.from_dict(flex_content))
 
-def create_timezone_flex():
-    """إنشاء نافذة اختيار المنطقة"""
-    cities = list(TIMEZONES.keys())
-    buttons = []
-    
-    for i in range(0, len(cities), 2):
-        row = {
-            "type": "box",
-            "layout": "horizontal",
-            "contents": [],
-            "spacing": "xs"
-        }
-        
-        for j in range(2):
-            if i + j < len(cities):
-                city = cities[i + j]
-                row["contents"].append({
-                    "type": "button",
-                    "action": {
-                        "type": "postback",
-                        "label": city,
-                        "data": f"timezone_{city}"
-                    },
-                    "style": "secondary",
-                    "color": "#ffffff",
-                    "height": "sm",
-                    "flex": 1
-                })
-        
-        buttons.append(row)
-    
-    flex_content = {
-        "type": "bubble",
-        "size": "kilo",
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {
-                    "type": "text",
-                    "text": "اختر منطقتك",
-                    "weight": "bold",
-                    "size": "lg",
-                    "align": "center",
-                    "color": "#ffffff"
-                },
-                {
-                    "type": "separator",
-                    "margin": "md",
-                    "color": "#444444"
-                },
-                {
-                    "type": "box",
-                    "layout": "vertical",
-                    "margin": "lg",
-                    "spacing": "xs",
-                    "contents": buttons
-                }
-            ],
-            "paddingAll": "16px",
-            "backgroundColor": "#1a1a1a"
-        }
-    }
-    
-    return FlexMessage(alt_text="اختر منطقتك", contents=FlexContainer.from_dict(flex_content))
-
 def normalize_tasbih(text):
     text = text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("ة", "ه")
     m = {"استغفرالله": "استغفر الله", "سبحانالله": "سبحان الله", "الحمدلله": "الحمد لله", "اللهأكبر": "الله أكبر"}
     return m.get(text)
 
 def adhkar_scheduler():
+    # مواقيت الرياض +3
     sa_tz = pytz.timezone("Asia/Riyadh")
     sent = {"morning": None, "evening": None, "sleep": None}
     while True:
@@ -421,13 +308,13 @@ threading.Thread(target=adhkar_scheduler, daemon=True).start()
 
 links_count = {}
 
-def handle_links(event, user_id, gid=None):
+def handle_links(event, user_id, gid):
     try:
         text = event.message.text.strip()
         if any(x in text.lower() for x in ["http://", "https://", "www."]):
             links_count[user_id] = links_count.get(user_id, 0) + 1
             if links_count[user_id] == 2:
-                name = get_group_member_name(gid, user_id) if gid else get_user_name(user_id)
+                name = get_group_member_name(gid, user_id)
                 reply_message(event.reply_token, f"{name}\nالرجاء عدم تكرار إرسال الروابط")
                 return True
             elif links_count[user_id] >= 3:
@@ -441,11 +328,11 @@ def check_salam(text):
     salam = ["السلام عليكم", "سلام عليكم", "السلام", "سلام", "عليكم السلام"]
     return any(s in text.lower() for s in salam)
 
-VALID_COMMANDS = ["مساعدة", "فضل", "تسبيح", "استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر", "ذكرني", "منطقة", "معلومات", "ايقاف", "تفعيل"]
+VALID_COMMANDS = ["مساعدة", "فضل", "تسبيح", "ذكرني", "معلومات"]
 
 def is_valid_command(text):
     txt = text.lower().strip()
-    if check_salam(text) or txt in [c.lower() for c in VALID_COMMANDS] or normalize_tasbih(text):
+    if check_salam(text) or txt in [c.lower() for c in VALID_COMMANDS]:
         return True
     return False
 
@@ -456,11 +343,11 @@ def handle_message(event):
         user_id = event.source.user_id
         gid = getattr(event.source, "group_id", None)
 
-        if user_id not in target_users:
-            target_users.add(user_id)
-            save_data()
+        # التعامل مع المجموعات فقط
+        if not gid:
+            return
 
-        if gid and gid not in target_groups:
+        if gid not in target_groups:
             target_groups.add(gid)
             save_data()
 
@@ -479,7 +366,7 @@ def handle_message(event):
             return
 
         if text_lower == "مساعدة":
-            help_text = "بوت 85\n\nذكرني - ذكر أو دعاء\nفضل - فضل العبادات\nتسبيح - نافذة التسبيح\nمنطقة - اختيار منطقتك\nايقاف - إيقاف الإشعارات\nتفعيل - تفعيل الإشعارات\nمعلومات - عن البوت"
+            help_text = "بوت 85\n\nذكرني - ذكر أو دعاء\nفضل - فضل العبادات\nتسبيح - نافذة التسبيح\nمعلومات - عن البوت"
             reply_message(event.reply_token, help_text)
             return
 
@@ -488,29 +375,12 @@ def handle_message(event):
             reply_message(event.reply_token, info_text)
             return
 
-        if text_lower == "ايقاف":
-            notification_settings[user_id] = False
-            save_data()
-            reply_message(event.reply_token, "تم إيقاف الإشعارات")
-            return
-
-        if text_lower == "تفعيل":
-            notification_settings[user_id] = True
-            save_data()
-            reply_message(event.reply_token, "تم تفعيل الإشعارات")
-            return
-
         if text_lower == "فضل":
             reply_message(event.reply_token, get_next_fadl())
             return
 
         if text_lower == "تسبيح":
             flex_msg = create_tasbih_flex(user_id)
-            reply_message(event.reply_token, flex_msg)
-            return
-
-        if text_lower == "منطقة":
-            flex_msg = create_timezone_flex()
             reply_message(event.reply_token, flex_msg)
             return
 
@@ -524,7 +394,6 @@ def handle_message(event):
                 
                 message = random.choice(messages)
                 reply_message(event.reply_token, message)
-                broadcast_text(message, exclude_user=user_id, exclude_group=gid)
             except Exception as e:
                 logger.error(f"خطأ ذكرني: {e}")
             return
@@ -534,44 +403,44 @@ def handle_message(event):
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
-    """معالجة ضغط الأزرار - تحديث صامت"""
+    """معالجة ضغط الأزرار - تحديث العداد فقط"""
     try:
-        user_id = event.source.user_id
         data = event.postback.data
         
         if data.startswith("tasbih_"):
-            tasbih_text = data.replace("tasbih_", "")
+            parts = data.replace("tasbih_", "").rsplit("_", 1)
+            if len(parts) != 2:
+                return
+            
+            tasbih_text = parts[0]
+            user_id = parts[1]
             
             ensure_user_counts(user_id)
             counts = tasbih_counts[user_id]
-            
-            # حفظ الحالة السابقة
-            was_complete = counts[tasbih_text] >= TASBIH_LIMITS
             
             # زيادة العدد
             if counts[tasbih_text] < TASBIH_LIMITS:
                 counts[tasbih_text] += 1
                 save_data()
-            
-            # إرسال رسالة نصية فقط عند الاكتمال
-            if counts[tasbih_text] == TASBIH_LIMITS and not was_complete:
-                reply_message(event.reply_token, f"تم اكتمال {tasbih_text}")
                 
-                if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
+                # إرسال نافذة محدثة
+                flex_msg = create_tasbih_flex(user_id)
+                reply_message(event.reply_token, flex_msg)
+                
+                # رسالة عند الاكتمال فقط
+                if counts[tasbih_text] == TASBIH_LIMITS:
                     time.sleep(0.5)
-                    send_message(user_id, "تم اكتمال الأذكار الأربعة\nجزاك الله خيراً")
+                    gid = getattr(event.source, "group_id", None)
+                    if gid:
+                        send_message(gid, f"تم اكتمال {tasbih_text}")
+                        
+                        if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
+                            time.sleep(0.5)
+                            send_message(gid, "تم اكتمال الأذكار الأربعة\nجزاك الله خيراً")
             else:
-                # رد فارغ لتجنب خطأ الرد
-                try:
-                    reply_message(event.reply_token, ".")
-                except:
-                    pass
-        
-        elif data.startswith("timezone_"):
-            city = data.replace("timezone_", "")
-            user_timezones[user_id] = TIMEZONES.get(city, "Asia/Riyadh")
-            save_data()
-            reply_message(event.reply_token, f"تم اختيار {city}")
+                # إذا كان مكتمل، أرسل نفس النافذة
+                flex_msg = create_tasbih_flex(user_id)
+                reply_message(event.reply_token, flex_msg)
     
     except Exception as e:
         logger.error(f"خطأ postback: {e}")
@@ -592,7 +461,7 @@ def home():
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "users": len(target_users), "groups": len(target_groups)}), 200
+    return jsonify({"status": "ok", "groups": len(target_groups)}), 200
 
 @app.route("/callback", methods=["POST"])
 def callback():
