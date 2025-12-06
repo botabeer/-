@@ -145,7 +145,7 @@ def create_tasbih_flex(user_id):
                 # العنوان البسيط
                 {
                     "type": "text",
-                    "text": "التسبيح",
+                    "text": "بوت 85",
                     "size": "md",
                     "weight": "bold",
                     "color": "#ffffff",
@@ -362,7 +362,7 @@ def create_tasbih_flex(user_id):
                 },
                 {
                     "type": "text",
-                    "text": "بوت 85",
+                    "text": "تم إنشاء هذا البوت بواسطة عبير الدوسري @ 2025",
                     "size": "xxs",
                     "color": "#606060",
                     "align": "center",
