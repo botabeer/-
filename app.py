@@ -20,6 +20,10 @@ ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 SECRET = os.getenv("LINE_CHANNEL_SECRET")
 PORT = int(os.getenv("PORT", 5000))
 
+if not ACCESS_TOKEN or not SECRET:
+    logger.error("مفاتيح LINE غير موجودة")
+    raise ValueError("يجب تعيين LINE_CHANNEL_ACCESS_TOKEN و LINE_CHANNEL_SECRET")
+
 configuration = Configuration(access_token=ACCESS_TOKEN)
 handler = WebhookHandler(SECRET)
 
@@ -33,7 +37,8 @@ def load_json(file, default):
     try:
         with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except Exception as e:
+        logger.error(f"خطأ تحميل {file}: {e}")
         return default
 
 def save_data():
@@ -86,7 +91,8 @@ def send_message(target_id, message):
                 api.push_message(PushMessageRequest(to=target_id, messages=[message]))
         return True
     except Exception as e:
-        if "400" not in str(e) and "403" not in str(e):
+        error_str = str(e)
+        if "400" not in error_str and "403" not in error_str and "404" not in error_str:
             logger.error(f"ارسال فشل {target_id}: {e}")
         return False
 
@@ -108,6 +114,7 @@ def broadcast_text(text):
     for gid in list(target_groups):
         if send_message(gid, text):
             sent += 1
+            time.sleep(0.1)
         else:
             failed += 1
     logger.info(f"ارسال: {sent} نجح، {failed} فشل")
@@ -128,7 +135,6 @@ def ensure_user_counts(uid):
         save_data()
 
 def create_tasbih_flex(user_id):
-    """نافذة تسبيح بسيطة بتدرجات الأبيض والأسود"""
     counts = tasbih_counts.get(user_id, {key: 0 for key in TASBIH_KEYS})
     
     total = sum(counts.values())
@@ -142,7 +148,6 @@ def create_tasbih_flex(user_id):
             "type": "box",
             "layout": "vertical",
             "contents": [
-                # العنوان البسيط
                 {
                     "type": "text",
                     "text": "بوت 85",
@@ -151,7 +156,6 @@ def create_tasbih_flex(user_id):
                     "color": "#ffffff",
                     "align": "center"
                 },
-                # العداد المركزي
                 {
                     "type": "box",
                     "layout": "vertical",
@@ -180,114 +184,17 @@ def create_tasbih_flex(user_id):
                     "borderColor": "#404040",
                     "margin": "md"
                 },
-                # قائمة الأذكار
                 {
                     "type": "box",
                     "layout": "vertical",
                     "contents": [
-                        {
-                            "type": "box",
-                            "layout": "horizontal",
-                            "contents": [
-                                {
-                                    "type": "text",
-                                    "text": "استغفر الله",
-                                    "size": "xs",
-                                    "color": "#ffffff" if counts['استغفر الله'] >= 33 else "#808080",
-                                    "flex": 2
-                                },
-                                {
-                                    "type": "text",
-                                    "text": f"{counts['استغفر الله']}/33",
-                                    "size": "xs",
-                                    "color": "#c0c0c0",
-                                    "align": "end",
-                                    "flex": 1
-                                }
-                            ],
-                            "paddingAll": "8px",
-                            "backgroundColor": "#ffffff08" if counts['استغفر الله'] >= 33 else "#00000010",
-                            "cornerRadius": "5px"
-                        },
-                        {
-                            "type": "box",
-                            "layout": "horizontal",
-                            "contents": [
-                                {
-                                    "type": "text",
-                                    "text": "سبحان الله",
-                                    "size": "xs",
-                                    "color": "#ffffff" if counts['سبحان الله'] >= 33 else "#808080",
-                                    "flex": 2
-                                },
-                                {
-                                    "type": "text",
-                                    "text": f"{counts['سبحان الله']}/33",
-                                    "size": "xs",
-                                    "color": "#c0c0c0",
-                                    "align": "end",
-                                    "flex": 1
-                                }
-                            ],
-                            "paddingAll": "8px",
-                            "backgroundColor": "#ffffff08" if counts['سبحان الله'] >= 33 else "#00000010",
-                            "cornerRadius": "5px",
-                            "margin": "xs"
-                        },
-                        {
-                            "type": "box",
-                            "layout": "horizontal",
-                            "contents": [
-                                {
-                                    "type": "text",
-                                    "text": "الحمد لله",
-                                    "size": "xs",
-                                    "color": "#ffffff" if counts['الحمد لله'] >= 33 else "#808080",
-                                    "flex": 2
-                                },
-                                {
-                                    "type": "text",
-                                    "text": f"{counts['الحمد لله']}/33",
-                                    "size": "xs",
-                                    "color": "#c0c0c0",
-                                    "align": "end",
-                                    "flex": 1
-                                }
-                            ],
-                            "paddingAll": "8px",
-                            "backgroundColor": "#ffffff08" if counts['الحمد لله'] >= 33 else "#00000010",
-                            "cornerRadius": "5px",
-                            "margin": "xs"
-                        },
-                        {
-                            "type": "box",
-                            "layout": "horizontal",
-                            "contents": [
-                                {
-                                    "type": "text",
-                                    "text": "الله أكبر",
-                                    "size": "xs",
-                                    "color": "#ffffff" if counts['الله أكبر'] >= 33 else "#808080",
-                                    "flex": 2
-                                },
-                                {
-                                    "type": "text",
-                                    "text": f"{counts['الله أكبر']}/33",
-                                    "size": "xs",
-                                    "color": "#c0c0c0",
-                                    "align": "end",
-                                    "flex": 1
-                                }
-                            ],
-                            "paddingAll": "8px",
-                            "backgroundColor": "#ffffff08" if counts['الله أكبر'] >= 33 else "#00000010",
-                            "cornerRadius": "5px",
-                            "margin": "xs"
-                        }
+                        create_tasbih_row("استغفر الله", counts),
+                        create_tasbih_row("سبحان الله", counts, "xs"),
+                        create_tasbih_row("الحمد لله", counts, "xs"),
+                        create_tasbih_row("الله أكبر", counts, "xs")
                     ],
                     "margin": "md"
                 },
-                # أزرار التسبيح
                 {
                     "type": "box",
                     "layout": "vertical",
@@ -296,28 +203,8 @@ def create_tasbih_flex(user_id):
                             "type": "box",
                             "layout": "horizontal",
                             "contents": [
-                                {
-                                    "type": "button",
-                                    "action": {
-                                        "type": "postback",
-                                        "label": "استغفر الله",
-                                        "data": f"tasbih_استغفر الله_{user_id}"
-                                    },
-                                    "style": "secondary",
-                                    "color": "#404040",
-                                    "height": "sm"
-                                },
-                                {
-                                    "type": "button",
-                                    "action": {
-                                        "type": "postback",
-                                        "label": "سبحان الله",
-                                        "data": f"tasbih_سبحان الله_{user_id}"
-                                    },
-                                    "style": "secondary",
-                                    "color": "#404040",
-                                    "height": "sm"
-                                }
+                                create_tasbih_button("استغفر الله", user_id),
+                                create_tasbih_button("سبحان الله", user_id)
                             ],
                             "spacing": "xs"
                         },
@@ -325,28 +212,8 @@ def create_tasbih_flex(user_id):
                             "type": "box",
                             "layout": "horizontal",
                             "contents": [
-                                {
-                                    "type": "button",
-                                    "action": {
-                                        "type": "postback",
-                                        "label": "الحمد لله",
-                                        "data": f"tasbih_الحمد لله_{user_id}"
-                                    },
-                                    "style": "secondary",
-                                    "color": "#404040",
-                                    "height": "sm"
-                                },
-                                {
-                                    "type": "button",
-                                    "action": {
-                                        "type": "postback",
-                                        "label": "الله أكبر",
-                                        "data": f"tasbih_الله أكبر_{user_id}"
-                                    },
-                                    "style": "secondary",
-                                    "color": "#404040",
-                                    "height": "sm"
-                                }
+                                create_tasbih_button("الحمد لله", user_id),
+                                create_tasbih_button("الله أكبر", user_id)
                             ],
                             "spacing": "xs",
                             "margin": "xs"
@@ -354,7 +221,6 @@ def create_tasbih_flex(user_id):
                     ],
                     "margin": "md"
                 },
-                # الفاصل والفوتر
                 {
                     "type": "separator",
                     "margin": "md",
@@ -377,10 +243,47 @@ def create_tasbih_flex(user_id):
     
     return FlexMessage(alt_text="التسبيح", contents=FlexContainer.from_dict(flex_content))
 
-def normalize_tasbih(text):
-    text = text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("ة", "ه")
-    m = {"استغفرالله": "استغفر الله", "سبحانالله": "سبحان الله", "الحمدلله": "الحمد لله", "اللهأكبر": "الله أكبر"}
-    return m.get(text)
+def create_tasbih_row(text, counts, margin=None):
+    row = {
+        "type": "box",
+        "layout": "horizontal",
+        "contents": [
+            {
+                "type": "text",
+                "text": text,
+                "size": "xs",
+                "color": "#ffffff" if counts.get(text, 0) >= 33 else "#808080",
+                "flex": 2
+            },
+            {
+                "type": "text",
+                "text": f"{counts.get(text, 0)}/33",
+                "size": "xs",
+                "color": "#c0c0c0",
+                "align": "end",
+                "flex": 1
+            }
+        ],
+        "paddingAll": "8px",
+        "backgroundColor": "#ffffff08" if counts.get(text, 0) >= 33 else "#00000010",
+        "cornerRadius": "5px"
+    }
+    if margin:
+        row["margin"] = margin
+    return row
+
+def create_tasbih_button(text, user_id):
+    return {
+        "type": "button",
+        "action": {
+            "type": "postback",
+            "label": text,
+            "data": f"tasbih_{text}_{user_id}"
+        },
+        "style": "secondary",
+        "color": "#404040",
+        "height": "sm"
+    }
 
 def adhkar_scheduler():
     sa_tz = pytz.timezone("Asia/Riyadh")
@@ -428,13 +331,13 @@ def handle_links(event, user_id, gid):
 
 def check_salam(text):
     salam = ["السلام عليكم", "سلام عليكم", "السلام", "سلام", "عليكم السلام"]
-    return any(s in text.lower() for s in salam)
+    return any(s in text for s in salam)
 
 VALID_COMMANDS = ["مساعدة", "فضل", "تسبيح", "ذكرني"]
 
 def is_valid_command(text):
-    txt = text.lower().strip()
-    if check_salam(text) or txt in [c.lower() for c in VALID_COMMANDS]:
+    txt = text.strip()
+    if check_salam(text) or txt in VALID_COMMANDS:
         return True
     return False
 
@@ -496,7 +399,6 @@ def handle_message(event):
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
-    """معالجة الضغط على أزرار التسبيح"""
     try:
         data = event.postback.data
         
@@ -510,6 +412,9 @@ def handle_postback(event):
             
             ensure_user_counts(user_id)
             counts = tasbih_counts[user_id]
+            
+            if tasbih_text not in TASBIH_KEYS:
+                return
             
             if counts[tasbih_text] < TASBIH_LIMITS:
                 counts[tasbih_text] += 1
@@ -525,7 +430,7 @@ def handle_postback(event):
                     
                     if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
                         time.sleep(0.5)
-                        send_message(target_id, "اكتملت جميع الأذكار الأربعة\nجزاك الله خيراً")
+                        send_message(target_id, "اكتملت جميع الأذكار الأربعة\nجزاك الله خيرا")
             else:
                 reply_message(event.reply_token, f"{tasbih_text} مكتمل (33/33)")
     
@@ -557,6 +462,7 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
+        logger.error("Invalid signature")
         return "Invalid signature", 400
     except Exception as e:
         logger.error(f"خطأ webhook: {e}")
