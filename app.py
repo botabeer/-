@@ -82,32 +82,36 @@ def get_adhkar_message(adhkar_list, title):
     return msg.strip()
 
 def send_message(target_id, message):
-    try:
-        with ApiClient(configuration) as api_client:
-            api = MessagingApi(api_client)
-            if isinstance(message, str):
-                api.push_message(PushMessageRequest(to=target_id, messages=[TextMessage(text=message)]))
-            else:
-                api.push_message(PushMessageRequest(to=target_id, messages=[message]))
-        return True
-    except Exception as e:
-        error_str = str(e)
-        if "400" not in error_str and "403" not in error_str and "404" not in error_str:
-            logger.error(f"ارسال فشل {target_id}: {e}")
-        return False
+    def send_async():
+        try:
+            with ApiClient(configuration) as api_client:
+                api = MessagingApi(api_client)
+                if isinstance(message, str):
+                    api.push_message(PushMessageRequest(to=target_id, messages=[TextMessage(text=message)]))
+                else:
+                    api.push_message(PushMessageRequest(to=target_id, messages=[message]))
+        except Exception as e:
+            error_str = str(e)
+            if "400" not in error_str and "403" not in error_str and "404" not in error_str:
+                logger.error(f"ارسال فشل {target_id}: {e}")
+    
+    threading.Thread(target=send_async, daemon=True).start()
+    return True
 
 def reply_message(reply_token, message):
-    try:
-        with ApiClient(configuration) as api_client:
-            api = MessagingApi(api_client)
-            if isinstance(message, str):
-                api.reply_message(ReplyMessageRequest(reply_token=reply_token, messages=[TextMessage(text=message)]))
-            else:
-                api.reply_message(ReplyMessageRequest(reply_token=reply_token, messages=[message]))
-        return True
-    except Exception as e:
-        logger.error(f"رد فشل: {e}")
-        return False
+    def send_reply():
+        try:
+            with ApiClient(configuration) as api_client:
+                api = MessagingApi(api_client)
+                if isinstance(message, str):
+                    api.reply_message(ReplyMessageRequest(reply_token=reply_token, messages=[TextMessage(text=message)]))
+                else:
+                    api.reply_message(ReplyMessageRequest(reply_token=reply_token, messages=[message]))
+        except Exception as e:
+            logger.error(f"رد فشل: {e}")
+    
+    threading.Thread(target=send_reply, daemon=True).start()
+    return True
 
 def broadcast_text(text):
     sent, failed = 0, 0
@@ -447,25 +451,45 @@ def remind_all_on_start():
     except Exception as e:
         logger.error(f"خطأ بدء: {e}")
 
+@app.route("/ping", methods=["GET"])
+def ping():
+    return "pong", 200
+
 @app.route("/", methods=["GET"])
 def home():
-    return "بوت 85 نشط", 200
+    return jsonify({
+        "bot": "بوت 85",
+        "status": "نشط",
+        "endpoints": {
+            "callback": "/callback",
+            "health": "/health",
+            "reminder": "/reminder"
+        }
+    }), 200
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "groups": len(target_groups)}), 200
+    return jsonify({
+        "status": "ok", 
+        "groups": len(target_groups),
+        "users": len(tasbih_counts),
+        "uptime": "running"
+    }), 200
 
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
-    try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        logger.error("Invalid signature")
-        return "Invalid signature", 400
-    except Exception as e:
-        logger.error(f"خطأ webhook: {e}")
+    
+    def process_webhook():
+        try:
+            handler.handle(body, signature)
+        except InvalidSignatureError:
+            logger.error("Invalid signature")
+        except Exception as e:
+            logger.error(f"خطأ webhook: {e}")
+    
+    threading.Thread(target=process_webhook, daemon=True).start()
     return "OK", 200
 
 @app.route("/reminder", methods=["GET"])
