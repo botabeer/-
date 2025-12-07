@@ -476,10 +476,23 @@ def health():
         "uptime": "running"
     }), 200
 
-@app.route("/callback", methods=["POST"])
+@app.route("/callback", methods=["GET", "POST"])
 def callback():
+    if request.method == "GET":
+        return jsonify({
+            "status": "ok", 
+            "endpoint": "callback",
+            "message": "Webhook endpoint is ready",
+            "accepts": "POST from LINE",
+            "monitoring": "enabled"
+        }), 200
+    
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
+    
+    if not signature:
+        logger.warning("Missing X-Line-Signature header")
+        return "Missing signature", 400
     
     def process_webhook():
         try:
