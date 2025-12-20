@@ -3,6 +3,7 @@ import json
 import threading
 import logging
 import random
+import time
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -57,10 +58,11 @@ def save_data():
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 # تحميل البيانات
-data = load_json(DATA_FILE, {"groups": [], "users": [], "tasbih": {}})
+data = load_json(DATA_FILE, {"groups": [], "users": [], "tasbih": {}, "last_reminder": 0})
 target_groups = set(data.get("groups", []))
 target_users = set(data.get("users", []))
 tasbih_counts = data.get("tasbih", {})
+last_reminder_time = data.get("last_reminder", 0)
 
 content = load_json(CONTENT_FILE, {"duas": [], "adhkar": [], "hadiths": [], "quran": []})
 fadl_content = load_json(FADL_FILE, {"fadl": []}).get("fadl", [])
@@ -75,6 +77,7 @@ def save_all():
     data["groups"] = list(target_groups)
     data["users"] = list(target_users)
     data["tasbih"] = tasbih_counts
+    data["last_reminder"] = last_reminder_time
     save_data()
 
 def send_message(target_id, message):
@@ -342,6 +345,16 @@ def handle_message(event):
 
     elif lower_text == "ذكرني":
         try:
+            global last_reminder_time
+            current_time = time.time()
+            time_diff = current_time - last_reminder_time
+            
+            # التحقق من مرور ساعة على الأقل (3600 ثانية)
+            if time_diff < 3600:
+                remaining = int((3600 - time_diff) / 60)
+                reply_message(event.reply_token, f"يرجى الانتظار {remaining} دقيقة قبل إرسال تذكير جديد")
+                return
+            
             category = random.choice(["duas", "adhkar", "hadiths", "quran"])
             messages = content.get(category, [])
             if not messages:
@@ -349,13 +362,16 @@ def handle_message(event):
                 return
             message = random.choice(messages)
             
-            # إرسال للجميع
+            # إرسال للمجموعات فقط لتوفير الحصة
+            sent_count = 0
             for g in target_groups:
                 send_message(g, message)
-            for u in target_users:
-                send_message(u, message)
+                sent_count += 1
             
-            reply_message(event.reply_token, "تم إرسال التذكير للجميع")
+            last_reminder_time = current_time
+            save_all()
+            
+            reply_message(event.reply_token, f"تم إرسال التذكير لـ {sent_count} مجموعة")
         except Exception as e:
             logger.error(f"خطأ في أمر ذكرني: {e}")
 
