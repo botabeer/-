@@ -124,9 +124,12 @@ def reply_message(reply_token, message):
     threading.Thread(target=send_reply, daemon=True).start()
 
 def create_tasbih_flex(user_id):
+    ensure_user_counts(user_id)
+    counts = tasbih_counts[user_id]
+    
     flex_content = {
         "type": "bubble",
-        "size": "kilo",
+        "size": "mega",
         "body": {
             "type": "box",
             "layout": "vertical",
@@ -141,21 +144,14 @@ def create_tasbih_flex(user_id):
                     "margin": "none"
                 },
                 {
-                    "type": "text",
-                    "text": "اضغط على الذكر للعد",
-                    "size": "xs",
-                    "color": "#9E9E9E",
-                    "align": "center",
-                    "margin": "sm"
-                },
-                {
                     "type": "separator",
                     "margin": "lg",
                     "color": "#424242"
                 },
+                # استغفر الله
                 {
                     "type": "box",
-                    "layout": "horizontal",
+                    "layout": "vertical",
                     "contents": [
                         {
                             "type": "button",
@@ -164,10 +160,27 @@ def create_tasbih_flex(user_id):
                                 "label": "استغفر الله",
                                 "data": f"tasbih_استغفر الله_{user_id}"
                             },
-                            "style": "secondary",
-                            "color": "#424242",
-                            "height": "sm"
+                            "style": "primary",
+                            "color": "#1E88E5",
+                            "height": "md"
                         },
+                        {
+                            "type": "text",
+                            "text": f"{counts['استغفر الله']} من 33",
+                            "size": "sm",
+                            "color": "#B0BEC5",
+                            "align": "center",
+                            "margin": "sm"
+                        }
+                    ],
+                    "margin": "lg",
+                    "spacing": "sm"
+                },
+                # سبحان الله
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
                         {
                             "type": "button",
                             "action": {
@@ -175,13 +188,82 @@ def create_tasbih_flex(user_id):
                                 "label": "سبحان الله",
                                 "data": f"tasbih_سبحان الله_{user_id}"
                             },
-                            "style": "secondary",
-                            "color": "#424242",
-                            "height": "sm"
+                            "style": "primary",
+                            "color": "#43A047",
+                            "height": "md"
+                        },
+                        {
+                            "type": "text",
+                            "text": f"{counts['سبحان الله']} من 33",
+                            "size": "sm",
+                            "color": "#B0BEC5",
+                            "align": "center",
+                            "margin": "sm"
                         }
                     ],
-                    "spacing": "sm",
-                    "margin": "lg"
+                    "margin": "md",
+                    "spacing": "sm"
+                },
+                # الحمد لله
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "button",
+                            "action": {
+                                "type": "postback",
+                                "label": "الحمد لله",
+                                "data": f"tasbih_الحمد لله_{user_id}"
+                            },
+                            "style": "primary",
+                            "color": "#FB8C00",
+                            "height": "md"
+                        },
+                        {
+                            "type": "text",
+                            "text": f"{counts['الحمد لله']} من 33",
+                            "size": "sm",
+                            "color": "#B0BEC5",
+                            "align": "center",
+                            "margin": "sm"
+                        }
+                    ],
+                    "margin": "md",
+                    "spacing": "sm"
+                },
+                # الله أكبر
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "button",
+                            "action": {
+                                "type": "postback",
+                                "label": "الله أكبر",
+                                "data": f"tasbih_الله أكبر_{user_id}"
+                            },
+                            "style": "primary",
+                            "color": "#E53935",
+                            "height": "md"
+                        },
+                        {
+                            "type": "text",
+                            "text": f"{counts['الله أكبر']} من 34",
+                            "size": "sm",
+                            "color": "#B0BEC5",
+                            "align": "center",
+                            "margin": "sm"
+                        }
+                    ],
+                    "margin": "md",
+                    "spacing": "sm"
+                },
+                {
+                    "type": "separator",
+                    "margin": "lg",
+                    "color": "#424242"
                 },
                 {
                     "type": "box",
@@ -191,32 +273,15 @@ def create_tasbih_flex(user_id):
                             "type": "button",
                             "action": {
                                 "type": "postback",
-                                "label": "الحمد لله",
-                                "data": f"tasbih_الحمد لله_{user_id}"
-                            },
-                            "style": "secondary",
-                            "color": "#424242",
-                            "height": "sm"
-                        },
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "الله أكبر",
-                                "data": f"tasbih_الله أكبر_{user_id}"
+                                "label": "إعادة تعيين",
+                                "data": f"reset_{user_id}"
                             },
                             "style": "secondary",
                             "color": "#424242",
                             "height": "sm"
                         }
                     ],
-                    "spacing": "sm",
-                    "margin": "sm"
-                },
-                {
-                    "type": "separator",
-                    "margin": "lg",
-                    "color": "#424242"
+                    "margin": "md"
                 },
                 {
                     "type": "text",
@@ -301,17 +366,38 @@ def handle_message(event):
 @handler.add(PostbackEvent)
 def handle_postback(event):
     data_post = event.postback.data
-    if data_post.startswith("tasbih_"):
+    
+    if data_post.startswith("reset_"):
+        user_id = data_post.replace("reset_", "")
+        ensure_user_counts(user_id)
+        tasbih_counts[user_id] = {key: 0 for key in TASBIH_KEYS}
+        save_all()
+        flex_msg = create_tasbih_flex(user_id)
+        reply_message(event.reply_token, flex_msg)
+        
+    elif data_post.startswith("tasbih_"):
         parts = data_post.replace("tasbih_", "").rsplit("_", 1)
         if len(parts) != 2:
             return
         tasbih_text, user_id = parts
         ensure_user_counts(user_id)
+        
         if tasbih_text in TASBIH_KEYS:
-            tasbih_counts[user_id][tasbih_text] += 1
-            count = tasbih_counts[user_id][tasbih_text]
-            reply_message(event.reply_token, f"{tasbih_text}\n\nالعدد: {count} من 33")
-            save_all()
+            max_count = 34 if tasbih_text == "الله أكبر" else 33
+            
+            if tasbih_counts[user_id][tasbih_text] < max_count:
+                tasbih_counts[user_id][tasbih_text] += 1
+                count = tasbih_counts[user_id][tasbih_text]
+                save_all()
+                
+                if count == max_count:
+                    response_text = f"{tasbih_text}\n\nتم إكمال {max_count} مرة\nبارك الله فيك"
+                else:
+                    response_text = f"{tasbih_text}\n\nالعدد: {count} من {max_count}"
+                
+                reply_message(event.reply_token, response_text)
+            else:
+                reply_message(event.reply_token, f"تم إكمال {tasbih_text} بالكامل\nاستخدم زر إعادة تعيين للبدء من جديد")
 
 @app.route("/callback", methods=["POST"])
 def callback():
