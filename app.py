@@ -144,6 +144,14 @@ def create_tasbih_flex(user_id):
                     "margin": "none"
                 },
                 {
+                    "type": "text",
+                    "text": "اضغط على الذكر للعد",
+                    "size": "xs",
+                    "color": "#9E9E9E",
+                    "align": "center",
+                    "margin": "sm"
+                },
+                {
                     "type": "separator",
                     "margin": "lg",
                     "color": "#424242"
@@ -161,14 +169,14 @@ def create_tasbih_flex(user_id):
                                 "data": f"tasbih_استغفر الله_{user_id}"
                             },
                             "style": "primary",
-                            "color": "#1E88E5",
+                            "color": "#FFFFFF",
                             "height": "md"
                         },
                         {
                             "type": "text",
                             "text": f"{counts['استغفر الله']} من 33",
                             "size": "sm",
-                            "color": "#B0BEC5",
+                            "color": "#BDBDBD",
                             "align": "center",
                             "margin": "sm"
                         }
@@ -189,14 +197,14 @@ def create_tasbih_flex(user_id):
                                 "data": f"tasbih_سبحان الله_{user_id}"
                             },
                             "style": "primary",
-                            "color": "#43A047",
+                            "color": "#E0E0E0",
                             "height": "md"
                         },
                         {
                             "type": "text",
                             "text": f"{counts['سبحان الله']} من 33",
                             "size": "sm",
-                            "color": "#B0BEC5",
+                            "color": "#BDBDBD",
                             "align": "center",
                             "margin": "sm"
                         }
@@ -217,14 +225,14 @@ def create_tasbih_flex(user_id):
                                 "data": f"tasbih_الحمد لله_{user_id}"
                             },
                             "style": "primary",
-                            "color": "#FB8C00",
+                            "color": "#9E9E9E",
                             "height": "md"
                         },
                         {
                             "type": "text",
                             "text": f"{counts['الحمد لله']} من 33",
                             "size": "sm",
-                            "color": "#B0BEC5",
+                            "color": "#BDBDBD",
                             "align": "center",
                             "margin": "sm"
                         }
@@ -245,14 +253,14 @@ def create_tasbih_flex(user_id):
                                 "data": f"tasbih_الله أكبر_{user_id}"
                             },
                             "style": "primary",
-                            "color": "#E53935",
+                            "color": "#757575",
                             "height": "md"
                         },
                         {
                             "type": "text",
                             "text": f"{counts['الله أكبر']} من 34",
                             "size": "sm",
-                            "color": "#B0BEC5",
+                            "color": "#BDBDBD",
                             "align": "center",
                             "margin": "sm"
                         }
@@ -293,7 +301,7 @@ def create_tasbih_flex(user_id):
                 },
                 {
                     "type": "text",
-                    "text": "© 2025 عبير الدوسري",
+                    "text": "عبير الدوسري 2025",
                     "size": "xxs",
                     "color": "#616161",
                     "align": "center",
@@ -301,7 +309,7 @@ def create_tasbih_flex(user_id):
                 }
             ],
             "paddingAll": "20px",
-            "backgroundColor": "#121212"
+            "backgroundColor": "#1A1A1A"
         }
     }
     return FlexMessage(alt_text="نافذة التسبيح", contents=FlexContainer.from_dict(flex_content))
@@ -340,12 +348,14 @@ def handle_message(event):
                 reply_message(event.reply_token, "لا يوجد محتوى متاح حالياً")
                 return
             message = random.choice(messages)
-            reply_message(event.reply_token, message)
+            
+            # إرسال للجميع
             for g in target_groups:
                 send_message(g, message)
             for u in target_users:
-                if u != user_id:
-                    send_message(u, message)
+                send_message(u, message)
+            
+            reply_message(event.reply_token, "تم إرسال التذكير للجميع")
         except Exception as e:
             logger.error(f"خطأ في أمر ذكرني: {e}")
 
@@ -353,7 +363,7 @@ def handle_message(event):
         reply_message(event.reply_token, get_next_fadl())
 
     elif lower_text == "مساعدة":
-        help_text = """الأوامر المتاحة:
+        help_text = """الأوامر المتاحة
 
 تسبيح - فتح نافذة التسبيح التفاعلية
 ذكرني - إرسال ذكر عشوائي للجميع
@@ -393,7 +403,7 @@ def handle_postback(event):
                 if count == max_count:
                     response_text = f"{tasbih_text}\n\nتم إكمال {max_count} مرة\nبارك الله فيك"
                 else:
-                    response_text = f"{tasbih_text}\n\nالعدد: {count} من {max_count}"
+                    response_text = f"{tasbih_text}\n\nالعدد {count} من {max_count}"
                 
                 reply_message(event.reply_token, response_text)
             else:
