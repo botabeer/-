@@ -173,7 +173,7 @@ def create_tasbih_flex(user_id):
                                     "type": "text",
                                     "text": f"({counts['استغفر الله']}/33)",
                                     "size": "xs",
-                                    "color": "#B0B0B0",
+                                    "color": "#E0E0E0",
                                     "align": "center",
                                     "margin": "xs"
                                 }
@@ -199,7 +199,7 @@ def create_tasbih_flex(user_id):
                                     "type": "text",
                                     "text": f"({counts['سبحان الله']}/33)",
                                     "size": "xs",
-                                    "color": "#B0B0B0",
+                                    "color": "#E0E0E0",
                                     "align": "center",
                                     "margin": "xs"
                                 }
@@ -233,7 +233,7 @@ def create_tasbih_flex(user_id):
                                     "type": "text",
                                     "text": f"({counts['الحمد لله']}/33)",
                                     "size": "xs",
-                                    "color": "#B0B0B0",
+                                    "color": "#E0E0E0",
                                     "align": "center",
                                     "margin": "xs"
                                 }
@@ -252,7 +252,7 @@ def create_tasbih_flex(user_id):
                                         "data": f"tasbih_الله أكبر_{user_id}"
                                     },
                                     "style": "secondary",
-                                    "color": "#505050",
+                                    "color": "#E0E0E0",
                                     "height": "sm"
                                 },
                                 {
@@ -289,7 +289,7 @@ def create_tasbih_flex(user_id):
                 },
                 {
                     "type": "text",
-                    "text": "عبير الدوسري",
+                    "text": "تم إنشاء هذا البوت بواسطة عبير الدوسري @ 2025",
                     "size": "xxs",
                     "color": "#707070",
                     "align": "center",
