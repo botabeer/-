@@ -1,15 +1,14 @@
-from flask import Flask, request, jsonify
-from linebot.v3 import WebhookHandler
+import os, json, threading, logging, time
+from flask import Flask, request
+from linebot.v3 import WebhookHandler, Configuration, ApiClient
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
-    Configuration, ApiClient, MessagingApi,
-    ReplyMessageRequest, PushMessageRequest, 
-    TextMessage, FlexMessage, FlexContainer
+    MessagingApi, TextMessage, PushMessageRequest, ReplyMessageRequest,
+    FlexMessage, FlexContainer
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, PostbackEvent
-import os, threading, logging, json, time
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -18,18 +17,15 @@ ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 SECRET = os.getenv("LINE_CHANNEL_SECRET")
 PORT = int(os.getenv("PORT", 5000))
 
-if not ACCESS_TOKEN or not SECRET:
-    raise ValueError("يجب تعيين LINE_CHANNEL_ACCESS_TOKEN و LINE_CHANNEL_SECRET")
-
 configuration = Configuration(access_token=ACCESS_TOKEN)
 handler = WebhookHandler(SECRET)
 
-DATA_FILE = "data/data.json"
+# ==== ملفات البيانات ====
+DATA_FILE = "data.json"
 TASBIH_KEYS = ["استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر"]
 
 def load_json(file, default):
     if not os.path.exists(file):
-        os.makedirs(os.path.dirname(file), exist_ok=True)
         with open(file, "w", encoding="utf-8") as f:
             json.dump(default, f, ensure_ascii=False, indent=2)
     try:
@@ -53,6 +49,7 @@ def ensure_user_counts(uid):
         tasbih_counts[uid] = {key: 0 for key in TASBIH_KEYS}
         save_data()
 
+# ==== إرسال الرسائل ====
 def send_message(target_id, message):
     def send_async():
         try:
@@ -79,6 +76,7 @@ def reply_message(reply_token, message):
             logger.error(f"رد فشل: {e}")
     threading.Thread(target=send_reply, daemon=True).start()
 
+# ==== نافذة التسبيح بالأزرار ====
 def create_buttons_only_tasbih_flex(user_id):
     flex_content = {
         "type": "bubble",
@@ -87,40 +85,13 @@ def create_buttons_only_tasbih_flex(user_id):
             "type": "box",
             "layout": "vertical",
             "contents": [
-                {
-                    "type": "text",
-                    "text": "بوت 85",
-                    "size": "md",
-                    "weight": "bold",
-                    "color": "#ffffff",
-                    "align": "center"
-                },
+                {"type": "text", "text": "بوت 85", "size": "md", "weight": "bold", "color": "#ffffff", "align": "center"},
                 {
                     "type": "box",
                     "layout": "horizontal",
                     "contents": [
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "استغفر الله",
-                                "data": f"tasbih_استغفر الله_{user_id}"
-                            },
-                            "style": "secondary",
-                            "color": "#404040",
-                            "height": "sm"
-                        },
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "سبحان الله",
-                                "data": f"tasbih_سبحان الله_{user_id}"
-                            },
-                            "style": "secondary",
-                            "color": "#404040",
-                            "height": "sm"
-                        }
+                        {"type": "button", "action": {"type": "postback", "label": "استغفر الله", "data": f"tasbih_استغفر الله_{user_id}"}, "style": "secondary", "color": "#404040", "height": "sm"},
+                        {"type": "button", "action": {"type": "postback", "label": "سبحان الله", "data": f"tasbih_سبحان الله_{user_id}"}, "style": "secondary", "color": "#404040", "height": "sm"}
                     ],
                     "spacing": "xs",
                     "margin": "md"
@@ -129,45 +100,14 @@ def create_buttons_only_tasbih_flex(user_id):
                     "type": "box",
                     "layout": "horizontal",
                     "contents": [
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "الحمد لله",
-                                "data": f"tasbih_الحمد لله_{user_id}"
-                            },
-                            "style": "secondary",
-                            "color": "#404040",
-                            "height": "sm"
-                        },
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "الله أكبر",
-                                "data": f"tasbih_الله أكبر_{user_id}"
-                            },
-                            "style": "secondary",
-                            "color": "#404040",
-                            "height": "sm"
-                        }
+                        {"type": "button", "action": {"type": "postback", "label": "الحمد لله", "data": f"tasbih_الحمد لله_{user_id}"}, "style": "secondary", "color": "#404040", "height": "sm"},
+                        {"type": "button", "action": {"type": "postback", "label": "الله أكبر", "data": f"tasbih_الله أكبر_{user_id}"}, "style": "secondary", "color": "#404040", "height": "sm"}
                     ],
                     "spacing": "xs",
                     "margin": "xs"
                 },
-                {
-                    "type": "separator",
-                    "margin": "md",
-                    "color": "#404040"
-                },
-                {
-                    "type": "text",
-                    "text": "تم إنشاء هذا البوت بواسطة عبير الدوسري @ 2025",
-                    "size": "xxs",
-                    "color": "#aaaaaa",
-                    "align": "center",
-                    "margin": "sm"
-                }
+                {"type": "separator", "margin": "md", "color": "#404040"},
+                {"type": "text", "text": "تم إنشاء هذا البوت بواسطة عبير الدوسري @ 2025", "size": "xxs", "color": "#aaaaaa", "align": "center", "margin": "sm"}
             ],
             "paddingAll": "12px",
             "backgroundColor": "#1a1a1a"
@@ -175,11 +115,11 @@ def create_buttons_only_tasbih_flex(user_id):
     }
     return FlexMessage(alt_text="التسبيح", contents=FlexContainer.from_dict(flex_content))
 
+# ==== التعامل مع الرسائل ====
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_text = event.message.text.strip().lower()
     user_id = event.source.user_id
-
     ensure_user_counts(user_id)
 
     if user_text == "تسبيح":
@@ -188,6 +128,7 @@ def handle_message(event):
     elif user_text == "مساعدة":
         reply_message(event.reply_token, "أرسل 'تسبيح' لفتح نافذة التسبيح التفاعلية.")
 
+# ==== التعامل مع الضغط على الأزرار ====
 @handler.add(PostbackEvent)
 def handle_postback(event):
     data = event.postback.data
@@ -202,6 +143,7 @@ def handle_postback(event):
             save_data()
             reply_message(event.reply_token, f"{tasbih_text} تم")
 
+# ==== Webhook endpoint ====
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
@@ -217,4 +159,5 @@ def ping():
     return "pong", 200
 
 if __name__ == "__main__":
+    logger.info(f"بوت 85 يعمل على المنفذ {PORT}")
     app.run(host="0.0.0.0", port=PORT)
