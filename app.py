@@ -1,25 +1,44 @@
-import os, json, threading, logging, random
-from flask import Flask, request
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage, PostbackEvent, FlexSendMessage
+import os
+import json
+import threading
+import logging
+import random
+from flask import Flask, request, abort
+from linebot.v3 import WebhookHandler
+from linebot.v3.exceptions import InvalidSignatureError
+from linebot.v3.messaging import (
+    Configuration,
+    ApiClient,
+    MessagingApi,
+    ReplyMessageRequest,
+    PushMessageRequest,
+    TextMessage,
+    FlexMessage,
+    FlexContainer
+)
+from linebot.v3.webhooks import (
+    MessageEvent,
+    TextMessageContent,
+    PostbackEvent
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# إعدادات LINE Bot
 ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 SECRET = os.getenv("LINE_CHANNEL_SECRET")
 PORT = int(os.getenv("PORT", 5000))
 
-line_bot_api = LineBotApi(ACCESS_TOKEN)
+configuration = Configuration(access_token=ACCESS_TOKEN)
 handler = WebhookHandler(SECRET)
 
-# ==== ملفات البيانات ====
+# ملفات البيانات
 DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
-FADL_FILE = "data/fadl.json"
+FADL_FILE = "fadl.json"
 TASBIH_KEYS = ["استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر"]
 
 def load_json(file, default):
@@ -37,7 +56,7 @@ def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# ==== تحميل البيانات ====
+# تحميل البيانات
 data = load_json(DATA_FILE, {"groups": [], "users": [], "tasbih": {}})
 target_groups = set(data.get("groups", []))
 target_users = set(data.get("users", []))
@@ -61,26 +80,49 @@ def save_all():
 def send_message(target_id, message):
     def send_async():
         try:
-            if isinstance(message, str):
-                line_bot_api.push_message(target_id, TextSendMessage(text=message))
-            else:
-                line_bot_api.push_message(target_id, message)
+            with ApiClient(configuration) as api_client:
+                line_bot_api = MessagingApi(api_client)
+                if isinstance(message, str):
+                    line_bot_api.push_message(
+                        PushMessageRequest(
+                            to=target_id,
+                            messages=[TextMessage(text=message)]
+                        )
+                    )
+                else:
+                    line_bot_api.push_message(
+                        PushMessageRequest(
+                            to=target_id,
+                            messages=[message]
+                        )
+                    )
         except Exception as e:
-            logger.error(f"ارسال فشل {target_id}: {e}")
+            logger.error(f"فشل الإرسال إلى {target_id}: {e}")
     threading.Thread(target=send_async, daemon=True).start()
 
 def reply_message(reply_token, message):
     def send_reply():
         try:
-            if isinstance(message, str):
-                line_bot_api.reply_message(reply_token, TextSendMessage(text=message))
-            else:
-                line_bot_api.reply_message(reply_token, message)
+            with ApiClient(configuration) as api_client:
+                line_bot_api = MessagingApi(api_client)
+                if isinstance(message, str):
+                    line_bot_api.reply_message(
+                        ReplyMessageRequest(
+                            reply_token=reply_token,
+                            messages=[TextMessage(text=message)]
+                        )
+                    )
+                else:
+                    line_bot_api.reply_message(
+                        ReplyMessageRequest(
+                            reply_token=reply_token,
+                            messages=[message]
+                        )
+                    )
         except Exception as e:
-            logger.error(f"رد فشل: {e}")
+            logger.error(f"فشل الرد: {e}")
     threading.Thread(target=send_reply, daemon=True).start()
 
-# ==== نافذة التسبيح بالأزرار ====
 def create_tasbih_flex(user_id):
     flex_content = {
         "type": "bubble",
@@ -89,45 +131,124 @@ def create_tasbih_flex(user_id):
             "type": "box",
             "layout": "vertical",
             "contents": [
-                {"type": "text", "text": "بوت 85", "size": "md", "weight": "bold", "color": "#ffffff", "align": "center"},
+                {
+                    "type": "text",
+                    "text": "التسبيح الإلكتروني",
+                    "size": "xl",
+                    "weight": "bold",
+                    "color": "#FFFFFF",
+                    "align": "center",
+                    "margin": "none"
+                },
+                {
+                    "type": "text",
+                    "text": "اضغط على الذكر للعد",
+                    "size": "xs",
+                    "color": "#9E9E9E",
+                    "align": "center",
+                    "margin": "sm"
+                },
+                {
+                    "type": "separator",
+                    "margin": "lg",
+                    "color": "#424242"
+                },
                 {
                     "type": "box",
                     "layout": "horizontal",
                     "contents": [
-                        {"type": "button", "action": {"type": "postback", "label": "استغفر الله", "data": f"tasbih_استغفر الله_{user_id}"}, "style": "secondary", "color": "#404040", "height": "sm"},
-                        {"type": "button", "action": {"type": "postback", "label": "سبحان الله", "data": f"tasbih_سبحان الله_{user_id}"}, "style": "secondary", "color": "#404040", "height": "sm"}
+                        {
+                            "type": "button",
+                            "action": {
+                                "type": "postback",
+                                "label": "استغفر الله",
+                                "data": f"tasbih_استغفر الله_{user_id}"
+                            },
+                            "style": "secondary",
+                            "color": "#424242",
+                            "height": "sm"
+                        },
+                        {
+                            "type": "button",
+                            "action": {
+                                "type": "postback",
+                                "label": "سبحان الله",
+                                "data": f"tasbih_سبحان الله_{user_id}"
+                            },
+                            "style": "secondary",
+                            "color": "#424242",
+                            "height": "sm"
+                        }
                     ],
-                    "spacing": "xs",
+                    "spacing": "sm",
+                    "margin": "lg"
+                },
+                {
+                    "type": "box",
+                    "layout": "horizontal",
+                    "contents": [
+                        {
+                            "type": "button",
+                            "action": {
+                                "type": "postback",
+                                "label": "الحمد لله",
+                                "data": f"tasbih_الحمد لله_{user_id}"
+                            },
+                            "style": "secondary",
+                            "color": "#424242",
+                            "height": "sm"
+                        },
+                        {
+                            "type": "button",
+                            "action": {
+                                "type": "postback",
+                                "label": "الله أكبر",
+                                "data": f"tasbih_الله أكبر_{user_id}"
+                            },
+                            "style": "secondary",
+                            "color": "#424242",
+                            "height": "sm"
+                        }
+                    ],
+                    "spacing": "sm",
+                    "margin": "sm"
+                },
+                {
+                    "type": "separator",
+                    "margin": "lg",
+                    "color": "#424242"
+                },
+                {
+                    "type": "text",
+                    "text": "بوت مجاني للجميع",
+                    "size": "xxs",
+                    "color": "#757575",
+                    "align": "center",
                     "margin": "md"
                 },
                 {
-                    "type": "box",
-                    "layout": "horizontal",
-                    "contents": [
-                        {"type": "button", "action": {"type": "postback", "label": "الحمد لله", "data": f"tasbih_الحمد لله_{user_id}"}, "style": "secondary", "color": "#404040", "height": "sm"},
-                        {"type": "button", "action": {"type": "postback", "label": "الله أكبر", "data": f"tasbih_الله أكبر_{user_id}"}, "style": "secondary", "color": "#404040", "height": "sm"}
-                    ],
-                    "spacing": "xs",
+                    "type": "text",
+                    "text": "© 2025 عبير الدوسري",
+                    "size": "xxs",
+                    "color": "#616161",
+                    "align": "center",
                     "margin": "xs"
-                },
-                {"type": "separator", "margin": "md", "color": "#404040"},
-                {"type": "text", "text": "تم إنشاء هذا البوت بواسطة عبير الدوسري @ 2025", "size": "xxs", "color": "#aaaaaa", "align": "center", "margin": "sm"}
+                }
             ],
-            "paddingAll": "12px",
-            "backgroundColor": "#1a1a1a"
+            "paddingAll": "20px",
+            "backgroundColor": "#121212"
         }
     }
-    return FlexSendMessage(alt_text="التسبيح", contents=flex_content)
+    return FlexMessage(alt_text="نافذة التسبيح", contents=FlexContainer.from_dict(flex_content))
 
 def get_next_fadl():
     global fadl_index
     if not fadl_content:
-        return "لا يوجد فضل متاح"
+        return "لا يوجد محتوى متاح"
     msg = fadl_content[fadl_index]
     fadl_index = (fadl_index + 1) % len(fadl_content)
     return msg
 
-# ==== التعامل مع الرسائل ====
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_text = event.message.text.strip()
@@ -161,17 +282,22 @@ def handle_message(event):
                 if u != user_id:
                     send_message(u, message)
         except Exception as e:
-            logger.error(f"خطأ أمر ذكرني: {e}")
+            logger.error(f"خطأ في أمر ذكرني: {e}")
 
     elif lower_text == "فضل":
         reply_message(event.reply_token, get_next_fadl())
 
     elif lower_text == "مساعدة":
-        reply_message(event.reply_token, "أوامر البوت:\n- تسبيح\n- ذكرني\n- فضل")
+        help_text = """الأوامر المتاحة:
+
+تسبيح - فتح نافذة التسبيح التفاعلية
+ذكرني - إرسال ذكر عشوائي للجميع
+فضل - عرض فضل عمل من الأعمال الصالحة
+مساعدة - عرض هذه القائمة"""
+        reply_message(event.reply_token, help_text)
 
     save_all()
 
-# ==== التعامل مع الضغط على الأزرار ====
 @handler.add(PostbackEvent)
 def handle_postback(event):
     data_post = event.postback.data
@@ -183,10 +309,10 @@ def handle_postback(event):
         ensure_user_counts(user_id)
         if tasbih_text in TASBIH_KEYS:
             tasbih_counts[user_id][tasbih_text] += 1
-            reply_message(event.reply_token, f"{tasbih_text} ({tasbih_counts[user_id][tasbih_text]}/33)")
+            count = tasbih_counts[user_id][tasbih_text]
+            reply_message(event.reply_token, f"{tasbih_text}\n\nالعدد: {count} من 33")
             save_all()
 
-# ==== Webhook endpoint ====
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
@@ -194,13 +320,17 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        return "Invalid signature", 400
-    return "OK", 200
+        abort(400)
+    return "OK"
 
 @app.route("/ping", methods=["GET"])
 def ping():
-    return "pong", 200
+    return "Bot is running", 200
+
+@app.route("/", methods=["GET"])
+def home():
+    return "LINE Bot Server is Active", 200
 
 if __name__ == "__main__":
-    logger.info(f"بوت 85 يعمل على المنفذ {PORT}")
+    logger.info(f"بدء تشغيل البوت على المنفذ {PORT}")
     app.run(host="0.0.0.0", port=PORT)
