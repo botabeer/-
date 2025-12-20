@@ -1,4 +1,4 @@
-import os, json, threading, logging, time
+import os, json, threading, logging, time, random
 from flask import Flask, request
 from linebot.v3 import WebhookHandler, Configuration, ApiClient
 from linebot.v3.exceptions import InvalidSignatureError
@@ -22,10 +22,12 @@ handler = WebhookHandler(SECRET)
 
 # ==== ملفات البيانات ====
 DATA_FILE = "data.json"
+CONTENT_FILE = "content.json"
 TASBIH_KEYS = ["استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر"]
 
 def load_json(file, default):
     if not os.path.exists(file):
+        os.makedirs(os.path.dirname(file), exist_ok=True)
         with open(file, "w", encoding="utf-8") as f:
             json.dump(default, f, ensure_ascii=False, indent=2)
     try:
@@ -37,19 +39,30 @@ def load_json(file, default):
 def save_data():
     try:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({"tasbih": tasbih_counts}, f, ensure_ascii=False, indent=2)
+            json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        logger.error(f"خطأ حفظ: {e}")
+        logger.error(f"خطأ حفظ البيانات: {e}")
 
-data = load_json(DATA_FILE, {"tasbih": {}})
+# ==== تحميل البيانات ====
+data = load_json(DATA_FILE, {"groups": [], "users": [], "tasbih": {}})
+target_groups = set(data.get("groups", []))
+target_users = set(data.get("users", []))
 tasbih_counts = data.get("tasbih", {})
 
+content = load_json(CONTENT_FILE, {"duas": [], "adhkar": [], "hadiths": [], "quran": []})
+
+# ==== دوال المساعدة ====
 def ensure_user_counts(uid):
     if uid not in tasbih_counts:
         tasbih_counts[uid] = {key: 0 for key in TASBIH_KEYS}
-        save_data()
+        save_all()
 
-# ==== إرسال الرسائل ====
+def save_all():
+    data["groups"] = list(target_groups)
+    data["users"] = list(target_users)
+    data["tasbih"] = tasbih_counts
+    save_data()
+
 def send_message(target_id, message):
     def send_async():
         try:
@@ -120,27 +133,59 @@ def create_buttons_only_tasbih_flex(user_id):
 def handle_message(event):
     user_text = event.message.text.strip().lower()
     user_id = event.source.user_id
+    gid = getattr(event.source, "group_id", None)
+
+    # تسجيل القروب أو المستخدم
+    if gid:
+        target_groups.add(gid)
+    else:
+        target_users.add(user_id)
+
     ensure_user_counts(user_id)
 
     if user_text == "تسبيح":
         flex_msg = create_buttons_only_tasbih_flex(user_id)
         reply_message(event.reply_token, flex_msg)
     elif user_text == "مساعدة":
-        reply_message(event.reply_token, "أرسل 'تسبيح' لفتح نافذة التسبيح التفاعلية.")
+        reply_message(event.reply_token, "أرسل 'تسبيح' لفتح نافذة التسبيح أو 'ذكرني' لتلقي دعاء/ذكر/حديث/آية عشوائية.")
+    elif user_text == "ذكرني":
+        try:
+            category = random.choice(["duas", "adhkar", "hadiths", "quran"])
+            messages = content.get(category, [])
+            if not messages:
+                reply_message(event.reply_token, "لا يوجد محتوى متاح حالياً")
+                return
+            message = random.choice(messages)
+
+            # الرد على الشخص مباشرة
+            reply_message(event.reply_token, message)
+
+            # ارسال لكل القروبات
+            for g in target_groups:
+                send_message(g, message)
+            # ارسال لكل المستخدمين الخاصين
+            for u in target_users:
+                if u != user_id:
+                    send_message(u, message)
+
+        except Exception as e:
+            logger.error(f"خطأ أمر ذكرني: {e}")
+
+    save_all()
 
 # ==== التعامل مع الضغط على الأزرار ====
 @handler.add(PostbackEvent)
 def handle_postback(event):
-    data = event.postback.data
-    if data.startswith("tasbih_"):
-        parts = data.replace("tasbih_", "").rsplit("_", 1)
+    data_post = event.postback.data
+    if data_post.startswith("tasbih_"):
+        parts = data_post.replace("tasbih_", "").rsplit("_", 1)
         if len(parts) != 2:
             return
         tasbih_text, user_id = parts
         ensure_user_counts(user_id)
         if tasbih_text in TASBIH_KEYS:
             tasbih_counts[user_id][tasbih_text] += 1
-            save_data()
+            save_all()
             reply_message(event.reply_token, f"{tasbih_text} تم")
 
 # ==== Webhook endpoint ====
