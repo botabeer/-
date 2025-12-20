@@ -1,11 +1,8 @@
-import os, json, threading, logging, time, random
+import os, json, threading, logging, random
 from flask import Flask, request
 from linebot.v3 import WebhookHandler, Configuration, ApiClient
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import (
-    MessagingApi, TextMessage, PushMessageRequest, ReplyMessageRequest,
-    FlexMessage, FlexContainer
-)
+from linebot.v3.messaging import MessagingApi, TextMessage, PushMessageRequest, ReplyMessageRequest, FlexMessage, FlexContainer
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, PostbackEvent
 
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +20,7 @@ handler = WebhookHandler(SECRET)
 # ==== ملفات البيانات ====
 DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
+FADL_FILE = "data/fadl.json"
 TASBIH_KEYS = ["استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر"]
 
 def load_json(file, default):
@@ -37,11 +35,8 @@ def load_json(file, default):
         return default
 
 def save_data():
-    try:
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error(f"خطأ حفظ البيانات: {e}")
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 # ==== تحميل البيانات ====
 data = load_json(DATA_FILE, {"groups": [], "users": [], "tasbih": {}})
@@ -50,8 +45,9 @@ target_users = set(data.get("users", []))
 tasbih_counts = data.get("tasbih", {})
 
 content = load_json(CONTENT_FILE, {"duas": [], "adhkar": [], "hadiths": [], "quran": []})
+fadl_content = load_json(FADL_FILE, {"fadl": []}).get("fadl", [])
+fadl_index = 0
 
-# ==== دوال المساعدة ====
 def ensure_user_counts(uid):
     if uid not in tasbih_counts:
         tasbih_counts[uid] = {key: 0 for key in TASBIH_KEYS}
@@ -90,7 +86,7 @@ def reply_message(reply_token, message):
     threading.Thread(target=send_reply, daemon=True).start()
 
 # ==== نافذة التسبيح بالأزرار ====
-def create_buttons_only_tasbih_flex(user_id):
+def create_tasbih_flex(user_id):
     flex_content = {
         "type": "bubble",
         "size": "kilo",
@@ -128,10 +124,19 @@ def create_buttons_only_tasbih_flex(user_id):
     }
     return FlexMessage(alt_text="التسبيح", contents=FlexContainer.from_dict(flex_content))
 
+def get_next_fadl():
+    global fadl_index
+    if not fadl_content:
+        return "لا يوجد فضل متاح"
+    msg = fadl_content[fadl_index]
+    fadl_index = (fadl_index + 1) % len(fadl_content)
+    return msg
+
 # ==== التعامل مع الرسائل ====
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    user_text = event.message.text.strip().lower()
+    user_text = event.message.text.strip()
+    lower_text = user_text.lower()
     user_id = event.source.user_id
     gid = getattr(event.source, "group_id", None)
 
@@ -143,12 +148,11 @@ def handle_message(event):
 
     ensure_user_counts(user_id)
 
-    if user_text == "تسبيح":
-        flex_msg = create_buttons_only_tasbih_flex(user_id)
+    if lower_text == "تسبيح":
+        flex_msg = create_tasbih_flex(user_id)
         reply_message(event.reply_token, flex_msg)
-    elif user_text == "مساعدة":
-        reply_message(event.reply_token, "أرسل 'تسبيح' لفتح نافذة التسبيح أو 'ذكرني' لتلقي دعاء/ذكر/حديث/آية عشوائية.")
-    elif user_text == "ذكرني":
+
+    elif lower_text == "ذكرني":
         try:
             category = random.choice(["duas", "adhkar", "hadiths", "quran"])
             messages = content.get(category, [])
@@ -156,20 +160,24 @@ def handle_message(event):
                 reply_message(event.reply_token, "لا يوجد محتوى متاح حالياً")
                 return
             message = random.choice(messages)
-
             # الرد على الشخص مباشرة
             reply_message(event.reply_token, message)
-
-            # ارسال لكل القروبات
+            # إرسال لكل القروبات
             for g in target_groups:
                 send_message(g, message)
-            # ارسال لكل المستخدمين الخاصين
+            # إرسال لكل المستخدمين الخاصين
             for u in target_users:
                 if u != user_id:
                     send_message(u, message)
-
         except Exception as e:
             logger.error(f"خطأ أمر ذكرني: {e}")
+
+    elif lower_text == "فضل":
+        reply_message(event.reply_token, get_next_fadl())
+
+    elif lower_text == "مساعدة":
+        help_text = "أوامر البوت:\n- تسبيح\n- ذكرني\n- فضل"
+        reply_message(event.reply_token, help_text)
 
     save_all()
 
@@ -185,8 +193,8 @@ def handle_postback(event):
         ensure_user_counts(user_id)
         if tasbih_text in TASBIH_KEYS:
             tasbih_counts[user_id][tasbih_text] += 1
+            reply_message(event.reply_token, f"{tasbih_text} ({tasbih_counts[user_id][tasbih_text]}/33)")
             save_all()
-            reply_message(event.reply_token, f"{tasbih_text} تم")
 
 # ==== Webhook endpoint ====
 @app.route("/callback", methods=["POST"])
