@@ -150,169 +150,171 @@ def create_tasbih_flex(user_id):
                     "type": "text",
                     "text": "اضغط على الذكر للعد",
                     "size": "xs",
-                    "color": "#9E9E9E",
+                    "color": "#A0A0A0",
                     "align": "center",
                     "margin": "sm"
                 },
                 {
                     "type": "separator",
                     "margin": "lg",
-                    "color": "#424242"
-                },
-                # استغفر الله
-                {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "استغفر الله",
-                                "data": f"tasbih_استغفر الله_{user_id}"
-                            },
-                            "style": "primary",
-                            "color": "#FFFFFF",
-                            "height": "md"
-                        },
-                        {
-                            "type": "text",
-                            "text": f"{counts['استغفر الله']} من 33",
-                            "size": "sm",
-                            "color": "#BDBDBD",
-                            "align": "center",
-                            "margin": "sm"
-                        }
-                    ],
-                    "margin": "lg",
-                    "spacing": "sm"
-                },
-                # سبحان الله
-                {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "سبحان الله",
-                                "data": f"tasbih_سبحان الله_{user_id}"
-                            },
-                            "style": "primary",
-                            "color": "#E0E0E0",
-                            "height": "md"
-                        },
-                        {
-                            "type": "text",
-                            "text": f"{counts['سبحان الله']} من 33",
-                            "size": "sm",
-                            "color": "#BDBDBD",
-                            "align": "center",
-                            "margin": "sm"
-                        }
-                    ],
-                    "margin": "md",
-                    "spacing": "sm"
-                },
-                # الحمد لله
-                {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "الحمد لله",
-                                "data": f"tasbih_الحمد لله_{user_id}"
-                            },
-                            "style": "primary",
-                            "color": "#9E9E9E",
-                            "height": "md"
-                        },
-                        {
-                            "type": "text",
-                            "text": f"{counts['الحمد لله']} من 33",
-                            "size": "sm",
-                            "color": "#BDBDBD",
-                            "align": "center",
-                            "margin": "sm"
-                        }
-                    ],
-                    "margin": "md",
-                    "spacing": "sm"
-                },
-                # الله أكبر
-                {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "الله أكبر",
-                                "data": f"tasbih_الله أكبر_{user_id}"
-                            },
-                            "style": "primary",
-                            "color": "#757575",
-                            "height": "md"
-                        },
-                        {
-                            "type": "text",
-                            "text": f"{counts['الله أكبر']} من 34",
-                            "size": "sm",
-                            "color": "#BDBDBD",
-                            "align": "center",
-                            "margin": "sm"
-                        }
-                    ],
-                    "margin": "md",
-                    "spacing": "sm"
-                },
-                {
-                    "type": "separator",
-                    "margin": "lg",
-                    "color": "#424242"
+                    "color": "#404040"
                 },
                 {
                     "type": "box",
                     "layout": "horizontal",
                     "contents": [
                         {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "إعادة تعيين",
-                                "data": f"reset_{user_id}"
-                            },
-                            "style": "secondary",
-                            "color": "#424242",
-                            "height": "sm"
+                            "type": "box",
+                            "layout": "vertical",
+                            "contents": [
+                                {
+                                    "type": "button",
+                                    "action": {
+                                        "type": "postback",
+                                        "label": "استغفر الله",
+                                        "data": f"tasbih_استغفر الله_{user_id}"
+                                    },
+                                    "style": "secondary",
+                                    "color": "#4A4A4A",
+                                    "height": "md"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": f"{counts['استغفر الله']}/33",
+                                    "size": "xs",
+                                    "color": "#C0C0C0",
+                                    "align": "center",
+                                    "margin": "sm"
+                                }
+                            ],
+                            "flex": 1
+                        },
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "contents": [
+                                {
+                                    "type": "button",
+                                    "action": {
+                                        "type": "postback",
+                                        "label": "سبحان الله",
+                                        "data": f"tasbih_سبحان الله_{user_id}"
+                                    },
+                                    "style": "secondary",
+                                    "color": "#4A4A4A",
+                                    "height": "md"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": f"{counts['سبحان الله']}/33",
+                                    "size": "xs",
+                                    "color": "#C0C0C0",
+                                    "align": "center",
+                                    "margin": "sm"
+                                }
+                            ],
+                            "flex": 1
                         }
                     ],
+                    "spacing": "sm",
+                    "margin": "lg"
+                },
+                {
+                    "type": "box",
+                    "layout": "horizontal",
+                    "contents": [
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "contents": [
+                                {
+                                    "type": "button",
+                                    "action": {
+                                        "type": "postback",
+                                        "label": "الحمد لله",
+                                        "data": f"tasbih_الحمد لله_{user_id}"
+                                    },
+                                    "style": "secondary",
+                                    "color": "#4A4A4A",
+                                    "height": "md"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": f"{counts['الحمد لله']}/33",
+                                    "size": "xs",
+                                    "color": "#C0C0C0",
+                                    "align": "center",
+                                    "margin": "sm"
+                                }
+                            ],
+                            "flex": 1
+                        },
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "contents": [
+                                {
+                                    "type": "button",
+                                    "action": {
+                                        "type": "postback",
+                                        "label": "الله أكبر",
+                                        "data": f"tasbih_الله أكبر_{user_id}"
+                                    },
+                                    "style": "secondary",
+                                    "color": "#4A4A4A",
+                                    "height": "md"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": f"{counts['الله أكبر']}/34",
+                                    "size": "xs",
+                                    "color": "#C0C0C0",
+                                    "align": "center",
+                                    "margin": "sm"
+                                }
+                            ],
+                            "flex": 1
+                        }
+                    ],
+                    "spacing": "sm",
+                    "margin": "md"
+                },
+                {
+                    "type": "separator",
+                    "margin": "lg",
+                    "color": "#404040"
+                },
+                {
+                    "type": "button",
+                    "action": {
+                        "type": "postback",
+                        "label": "إعادة تعيين",
+                        "data": f"reset_{user_id}"
+                    },
+                    "style": "secondary",
+                    "color": "#3A3A3A",
+                    "height": "sm",
                     "margin": "md"
                 },
                 {
                     "type": "text",
                     "text": "بوت مجاني للجميع",
                     "size": "xxs",
-                    "color": "#757575",
+                    "color": "#808080",
                     "align": "center",
                     "margin": "md"
                 },
                 {
                     "type": "text",
-                    "text": "عبير الدوسري 2025",
+                    "text": "© 2025 عبير الدوسري",
                     "size": "xxs",
-                    "color": "#616161",
+                    "color": "#707070",
                     "align": "center",
                     "margin": "xs"
                 }
             ],
             "paddingAll": "20px",
-            "backgroundColor": "#1A1A1A"
+            "backgroundColor": "#1C1C1C"
         }
     }
     return FlexMessage(alt_text="نافذة التسبيح", contents=FlexContainer.from_dict(flex_content))
@@ -362,16 +364,16 @@ def handle_message(event):
                 return
             message = random.choice(messages)
             
-            # إرسال للمجموعات فقط لتوفير الحصة
-            sent_count = 0
+            # إرسال للمجموعات والشخص الذي أرسل الأمر
             for g in target_groups:
                 send_message(g, message)
-                sent_count += 1
+            
+            # الرد على الشخص مباشرة بالذكر
+            reply_message(event.reply_token, message)
             
             last_reminder_time = current_time
             save_all()
             
-            reply_message(event.reply_token, f"تم إرسال التذكير لـ {sent_count} مجموعة")
         except Exception as e:
             logger.error(f"خطأ في أمر ذكرني: {e}")
 
