@@ -252,14 +252,14 @@ def create_tasbih_flex(user_id):
                                         "data": f"tasbih_الله أكبر_{user_id}"
                                     },
                                     "style": "secondary",
-                                    "color": "#E0E0E0",
+                                    "color": "#505050",
                                     "height": "sm"
                                 },
                                 {
                                     "type": "text",
                                     "text": f"({counts['الله أكبر']}/33)",
                                     "size": "xs",
-                                    "color": "#B0B0B0",
+                                    "color": "#E0E0E0",
                                     "align": "center",
                                     "margin": "xs"
                                 }
