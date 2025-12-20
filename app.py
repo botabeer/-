@@ -1,9 +1,8 @@
 import os, json, threading, logging, random
 from flask import Flask, request
-from linebot.v3 import WebhookHandler, Configuration, ApiClient
-from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import MessagingApi, TextMessage, PushMessageRequest, ReplyMessageRequest, FlexMessage, FlexContainer
-from linebot.v3.webhooks import MessageEvent, TextMessageContent, PostbackEvent
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage, PostbackEvent, FlexSendMessage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -14,7 +13,7 @@ ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 SECRET = os.getenv("LINE_CHANNEL_SECRET")
 PORT = int(os.getenv("PORT", 5000))
 
-configuration = Configuration(access_token=ACCESS_TOKEN)
+line_bot_api = LineBotApi(ACCESS_TOKEN)
 handler = WebhookHandler(SECRET)
 
 # ==== ملفات البيانات ====
@@ -62,12 +61,10 @@ def save_all():
 def send_message(target_id, message):
     def send_async():
         try:
-            with ApiClient(configuration) as api_client:
-                api = MessagingApi(api_client)
-                if isinstance(message, str):
-                    api.push_message(PushMessageRequest(to=target_id, messages=[TextMessage(text=message)]))
-                else:
-                    api.push_message(PushMessageRequest(to=target_id, messages=[message]))
+            if isinstance(message, str):
+                line_bot_api.push_message(target_id, TextSendMessage(text=message))
+            else:
+                line_bot_api.push_message(target_id, message)
         except Exception as e:
             logger.error(f"ارسال فشل {target_id}: {e}")
     threading.Thread(target=send_async, daemon=True).start()
@@ -75,12 +72,10 @@ def send_message(target_id, message):
 def reply_message(reply_token, message):
     def send_reply():
         try:
-            with ApiClient(configuration) as api_client:
-                api = MessagingApi(api_client)
-                if isinstance(message, str):
-                    api.reply_message(ReplyMessageRequest(reply_token=reply_token, messages=[TextMessage(text=message)]))
-                else:
-                    api.reply_message(ReplyMessageRequest(reply_token=reply_token, messages=[message]))
+            if isinstance(message, str):
+                line_bot_api.reply_message(reply_token, TextSendMessage(text=message))
+            else:
+                line_bot_api.reply_message(reply_token, message)
         except Exception as e:
             logger.error(f"رد فشل: {e}")
     threading.Thread(target=send_reply, daemon=True).start()
@@ -122,7 +117,7 @@ def create_tasbih_flex(user_id):
             "backgroundColor": "#1a1a1a"
         }
     }
-    return FlexMessage(alt_text="التسبيح", contents=FlexContainer.from_dict(flex_content))
+    return FlexSendMessage(alt_text="التسبيح", contents=flex_content)
 
 def get_next_fadl():
     global fadl_index
@@ -140,7 +135,6 @@ def handle_message(event):
     user_id = event.source.user_id
     gid = getattr(event.source, "group_id", None)
 
-    # تسجيل القروب أو المستخدم
     if gid:
         target_groups.add(gid)
     else:
@@ -160,12 +154,9 @@ def handle_message(event):
                 reply_message(event.reply_token, "لا يوجد محتوى متاح حالياً")
                 return
             message = random.choice(messages)
-            # الرد على الشخص مباشرة
             reply_message(event.reply_token, message)
-            # إرسال لكل القروبات
             for g in target_groups:
                 send_message(g, message)
-            # إرسال لكل المستخدمين الخاصين
             for u in target_users:
                 if u != user_id:
                     send_message(u, message)
@@ -176,8 +167,7 @@ def handle_message(event):
         reply_message(event.reply_token, get_next_fadl())
 
     elif lower_text == "مساعدة":
-        help_text = "أوامر البوت:\n- تسبيح\n- ذكرني\n- فضل"
-        reply_message(event.reply_token, help_text)
+        reply_message(event.reply_token, "أوامر البوت:\n- تسبيح\n- ذكرني\n- فضل")
 
     save_all()
 
