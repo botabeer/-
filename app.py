@@ -6,9 +6,8 @@ from linebot.v3.messaging import (
     ReplyMessageRequest, PushMessageRequest, TextMessage
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
-import os, random, json, threading, time, logging
-from datetime import datetime
-import pytz
+import os, random, json, logging
+from datetime import datetime, date
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -32,26 +31,30 @@ def load_json(file, default):
     try:
         with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except Exception as e:
+        logger.error(f"خطأ في تحميل {file}: {e}")
         return default
 
 def save_data():
     try:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({"users": list(target_users), "groups": list(target_groups), "tasbih": tasbih_counts}, f, ensure_ascii=False, indent=2)
+            json.dump({
+                "users": list(target_users),
+                "groups": list(target_groups),
+                "tasbih": tasbih_counts,
+                "last_reset": last_reset_dates
+            }, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error(f"خطأ حفظ: {e}")
 
-data = load_json(DATA_FILE, {"users": [], "groups": [], "tasbih": {}})
+data = load_json(DATA_FILE, {"users": [], "groups": [], "tasbih": {}, "last_reset": {}})
 target_users = set(data.get("users", []))
 target_groups = set(data.get("groups", []))
 tasbih_counts = data.get("tasbih", {})
+last_reset_dates = data.get("last_reset", {})
 
 content = load_json(CONTENT_FILE, {"duas": [], "adhkar": [], "hadiths": [], "quran": []})
 fadl_content = load_json("fadl.json", {"fadl": []}).get("fadl", [])
-morning_adhkar = load_json("morning_adhkar.json", {"adhkar": []}).get("adhkar", [])
-evening_adhkar = load_json("evening_adhkar.json", {"adhkar": []}).get("adhkar", [])
-sleep_adhkar = load_json("sleep_adhkar.json", {"adhkar": []}).get("adhkar", [])
 
 fadl_index = 0
 TASBIH_LIMITS = 33
@@ -64,14 +67,6 @@ def get_next_fadl():
     msg = fadl_content[fadl_index]
     fadl_index = (fadl_index + 1) % len(fadl_content)
     return msg
-
-def get_adhkar_message(adhkar_list, title):
-    if not adhkar_list:
-        return f"{title}\n\nلا يوجد أذكار"
-    msg = f"{title}\n\n"
-    for a in adhkar_list:
-        msg += f"{a}\n\n"
-    return msg.strip()
 
 def send_message(target_id, text):
     try:
@@ -132,43 +127,45 @@ def get_group_member_name(group_id, user_id):
 def ensure_user_counts(uid):
     if uid not in tasbih_counts:
         tasbih_counts[uid] = {key: 0 for key in TASBIH_KEYS}
+        last_reset_dates[uid] = str(date.today())
         save_data()
+
+def reset_tasbih_if_needed(user_id):
+    """تصفير العداد إذا مر يوم جديد"""
+    today = str(date.today())
+    last_reset = last_reset_dates.get(user_id)
+    
+    if last_reset != today:
+        tasbih_counts[user_id] = {key: 0 for key in TASBIH_KEYS}
+        last_reset_dates[user_id] = today
+        save_data()
+        return True
+    return False
 
 def get_tasbih_status(user_id, gid=None):
     counts = tasbih_counts[user_id]
     name = get_group_member_name(gid, user_id) if gid else get_user_name(user_id)
-    return f"حالة التسبيح\n{name}\n\nاستغفر الله: {counts['استغفر الله']}/33\nسبحان الله: {counts['سبحان الله']}/33\nالحمد لله: {counts['الحمد لله']}/33\nالله أكبر: {counts['الله أكبر']}/33"
+    status = f"حالة التسبيح\n{name}\n\n"
+    
+    for key in TASBIH_KEYS:
+        count = counts[key]
+        status += f"{key}: {count}/33\n"
+    
+    all_complete = all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS)
+    if all_complete:
+        status += "\nتم إكمال جميع الأذكار"
+    
+    return status
 
 def normalize_tasbih(text):
     text = text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("ة", "ه")
-    m = {"استغفرالله": "استغفر الله", "سبحانالله": "سبحان الله", "الحمدلله": "الحمد لله", "اللهأكبر": "الله أكبر"}
+    m = {
+        "استغفرالله": "استغفر الله",
+        "سبحانالله": "سبحان الله",
+        "الحمدلله": "الحمد لله",
+        "اللهأكبر": "الله أكبر"
+    }
     return m.get(text)
-
-def adhkar_scheduler():
-    sa_tz = pytz.timezone("Asia/Riyadh")
-    sent = {"morning": None, "evening": None, "sleep": None}
-    while True:
-        try:
-            now = datetime.now(sa_tz)
-            h, m = now.hour, now.minute
-            today = now.date()
-            
-            if h == 6 and m == 0 and sent["morning"] != today:
-                broadcast_text(get_adhkar_message(morning_adhkar, "أذكار الصباح"))
-                sent["morning"] = today
-            elif h == 17 and m == 0 and sent["evening"] != today:
-                broadcast_text(get_adhkar_message(evening_adhkar, "أذكار المساء"))
-                sent["evening"] = today
-            elif h == 22 and m == 0 and sent["sleep"] != today:
-                broadcast_text(get_adhkar_message(sleep_adhkar, "أذكار النوم"))
-                sent["sleep"] = today
-            
-            time.sleep(50)
-        except Exception as e:
-            logger.error(f"خطأ جدولة: {e}")
-            time.sleep(60)
-
-threading.Thread(target=adhkar_scheduler, daemon=True).start()
 
 links_count = {}
 
@@ -182,6 +179,7 @@ def handle_links(event, user_id, gid=None):
                 reply_message(event.reply_token, f"{name}\nالرجاء عدم تكرار إرسال الروابط")
                 return True
             elif links_count[user_id] >= 3:
+                logger.info(f"تم تجاهل رابط من {user_id}")
                 return True
             return True
     except:
@@ -192,7 +190,7 @@ def check_salam(text):
     salam = ["السلام عليكم", "سلام عليكم", "السلام", "سلام", "عليكم السلام"]
     return any(s in text.lower() for s in salam)
 
-VALID_COMMANDS = ["مساعدة", "فضل", "تسبيح", "استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر", "ذكرني"]
+VALID_COMMANDS = ["مساعدة", "فضل", "تسبيح", "استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر", "ذكرني", "إعادة"]
 
 def is_valid_command(text):
     txt = text.lower().strip()
@@ -218,6 +216,9 @@ def handle_message(event):
             logger.info(f"مجموعة جديدة: {gid}")
 
         ensure_user_counts(user_id)
+        
+        # تصفير تلقائي في بداية يوم جديد
+        was_reset = reset_tasbih_if_needed(user_id)
 
         if handle_links(event, user_id, gid):
             return
@@ -233,7 +234,28 @@ def handle_message(event):
             return
 
         if text_lower == "مساعدة":
-            help_text = "الأوامر:\n\n-ذكرني\nذكر/دعاء/حديث/آية\n\n-فضل\nفضل العبادات\n\n-تسبيح\nحالة التسبيح\n\nسبحان الله / الحمد لله / الله أكبر / استغفر الله\nزيادة العداد حتى 33"
+            help_text = """الأوامر المتاحة:
+
+ذكرني
+ارسال ذكر او دعاء او حديث او آية لجميع المستخدمين والمجموعات
+
+فضل
+عرض فضل العبادات والأذكار
+
+تسبيح
+عرض حالة التسبيح الخاصة بك
+
+إعادة
+تصفير عداد التسبيح وبدء من جديد
+
+التسبيح الإلكتروني:
+اكتب أي من الأذكار التالية لزيادة العداد حتى 33 مرة:
+- سبحان الله
+- الحمد لله
+- الله أكبر
+- استغفر الله
+
+ملاحظة: يتم تصفير العداد تلقائيا كل يوم"""
             reply_message(event.reply_token, help_text)
             return
 
@@ -242,14 +264,25 @@ def handle_message(event):
             return
 
         if text_lower == "تسبيح":
-            reply_message(event.reply_token, get_tasbih_status(user_id, gid))
+            status = get_tasbih_status(user_id, gid)
+            if was_reset:
+                status = "تم تصفير العداد ليوم جديد\n\n" + status
+            reply_message(event.reply_token, status)
+            return
+
+        if text_lower == "إعادة":
+            tasbih_counts[user_id] = {key: 0 for key in TASBIH_KEYS}
+            last_reset_dates[user_id] = str(date.today())
+            save_data()
+            reply_message(event.reply_token, "تم تصفير عداد التسبيح بنجاح\nيمكنك البدء من جديد")
+            logger.info(f"تم تصفير التسبيح يدويا للمستخدم: {user_id}")
             return
 
         normalized = normalize_tasbih(user_text)
         if normalized:
             counts = tasbih_counts[user_id]
             if counts[normalized] >= TASBIH_LIMITS:
-                reply_message(event.reply_token, f"تم اكتمال {normalized} مسبقا")
+                reply_message(event.reply_token, f"تم اكتمال {normalized} مسبقا\nاستخدم أمر: إعادة\nلتصفير العداد")
                 return
             
             counts[normalized] += 1
@@ -257,8 +290,9 @@ def handle_message(event):
 
             if counts[normalized] == TASBIH_LIMITS:
                 reply_message(event.reply_token, f"تم اكتمال {normalized}")
+                
                 if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
-                    send_message(user_id, "تم اكتمال التسبيحات الأربعة، جزاك الله خيراً")
+                    send_message(user_id, "تم اكتمال جميع التسبيحات الأربعة\nجزاك الله خيرا")
                 return
             
             reply_message(event.reply_token, get_tasbih_status(user_id, gid))
@@ -266,40 +300,56 @@ def handle_message(event):
 
         if text_lower == "ذكرني":
             try:
+                # اختيار فئة عشوائية
                 category = random.choice(["duas", "adhkar", "hadiths", "quran"])
                 messages = content.get(category, [])
+                
                 if not messages:
-                    reply_message(event.reply_token, "لا يوجد محتوى")
+                    reply_message(event.reply_token, "لا يوجد محتوى متاح")
+                    logger.warning(f"لا يوجد محتوى في الفئة: {category}")
                     return
                 
+                # اختيار رسالة عشوائية
                 message = random.choice(messages)
+                
+                logger.info(f"تم اختيار ذكر من فئة: {category}")
+                logger.info(f"الذكر: {message[:50]}...")
+                
+                # الرد على المستخدم مباشرة
                 reply_message(event.reply_token, message)
-                broadcast_text(message, exclude_user=user_id, exclude_group=gid)
+                
+                # إرسال لجميع المجموعات والمستخدمين الآخرين
+                sent, failed = broadcast_text(message, exclude_user=user_id, exclude_group=gid)
+                
+                logger.info(f"تم تنفيذ أمر ذكرني من {user_id}")
+                logger.info(f"تم الارسال الى: {sent} مستخدم/مجموعة")
+                logger.info(f"فشل: {failed}")
+                
             except Exception as e:
-                logger.error(f"خطأ ذكرني: {e}")
+                logger.error(f"خطأ في أمر ذكرني: {e}", exc_info=True)
+                reply_message(event.reply_token, "حدث خطأ، حاول مرة أخرى")
             return
 
     except Exception as e:
-        logger.error(f"خطأ معالجة: {e}")
-
-def remind_all_on_start():
-    try:
-        time.sleep(10)
-        logger.info("تشغيل ذكرني تلقائي...")
-        category = random.choice(["duas", "adhkar", "hadiths", "quran"])
-        messages = content.get(category, [])
-        if messages:
-            broadcast_text(random.choice(messages))
-    except Exception as e:
-        logger.error(f"خطأ بدء تشغيل: {e}")
+        logger.error(f"خطأ معالجة الرسالة: {e}", exc_info=True)
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot Active", 200
+    return jsonify({
+        "status": "running",
+        "bot": "Islamic Reminder Bot",
+        "users": len(target_users),
+        "groups": len(target_groups)
+    }), 200
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "users": len(target_users), "groups": len(target_groups)}), 200
+    return jsonify({
+        "status": "ok",
+        "users": len(target_users),
+        "groups": len(target_groups),
+        "timestamp": datetime.now().isoformat()
+    }), 200
 
 @app.route("/callback", methods=["POST"])
 def callback():
@@ -311,25 +361,49 @@ def callback():
         logger.warning("توقيع غير صالح")
         return "Invalid signature", 400
     except Exception as e:
-        logger.error(f"خطأ webhook: {e}")
+        logger.error(f"خطأ webhook: {e}", exc_info=True)
     return "OK", 200
 
-@app.route("/reminder", methods=["GET"])
-def reminder():
+@app.route("/stats", methods=["GET"])
+def stats():
+    """احصائيات البوت"""
+    total_tasbih = sum(sum(counts.values()) for counts in tasbih_counts.values())
+    return jsonify({
+        "total_users": len(target_users),
+        "total_groups": len(target_groups),
+        "total_tasbih_count": total_tasbih,
+        "active_users": len(tasbih_counts)
+    }), 200
+
+@app.route("/test_reminder", methods=["GET"])
+def test_reminder():
+    """اختبار ارسال ذكر"""
     try:
         category = random.choice(["duas", "adhkar", "hadiths", "quran"])
         messages = content.get(category, [])
-        if not messages:
-            return jsonify({"status": "no_content"}), 200
-        message = random.choice(messages)
-        sent, failed = broadcast_text(message)
-        return jsonify({"status": "ok", "sent": sent, "failed": failed}), 200
+        if messages:
+            message = random.choice(messages)
+            sent, failed = broadcast_text(message)
+            return jsonify({
+                "status": "success",
+                "category": category,
+                "message": message[:100],
+                "sent": sent,
+                "failed": failed
+            }), 200
+        else:
+            return jsonify({"status": "error", "message": "no content"}), 400
     except Exception as e:
-        logger.error(f"خطأ reminder: {e}")
-        return jsonify({"status": "error"}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
-    logger.info(f"بدء التشغيل - المنفذ {PORT}")
-    logger.info(f"مستخدمين: {len(target_users)}, مجموعات: {len(target_groups)}")
-    threading.Thread(target=remind_all_on_start, daemon=True).start()
+    logger.info("=" * 40)
+    logger.info(f"تشغيل البوت على المنفذ {PORT}")
+    logger.info(f"المستخدمين: {len(target_users)}")
+    logger.info(f"المجموعات: {len(target_groups)}")
+    logger.info(f"محتوى الأدعية: {len(content.get('duas', []))}")
+    logger.info(f"محتوى الأذكار: {len(content.get('adhkar', []))}")
+    logger.info(f"محتوى الأحاديث: {len(content.get('hadiths', []))}")
+    logger.info(f"محتوى القرآن: {len(content.get('quran', []))}")
+    logger.info("=" * 40)
     app.run(host="0.0.0.0", port=PORT)
