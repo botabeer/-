@@ -205,11 +205,13 @@ def handle_message(event):
         user_id = event.source.user_id
         gid = getattr(event.source, "group_id", None)
 
+        # تسجيل المستخدم تلقائيا
         if user_id not in target_users:
             target_users.add(user_id)
             save_data()
             logger.info(f"مستخدم جديد: {user_id}")
 
+        # تسجيل المجموعة تلقائيا عند أي رسالة
         if gid and gid not in target_groups:
             target_groups.add(gid)
             save_data()
@@ -220,9 +222,11 @@ def handle_message(event):
         # تصفير تلقائي في بداية يوم جديد
         was_reset = reset_tasbih_if_needed(user_id)
 
+        # معالجة الروابط أولا
         if handle_links(event, user_id, gid):
             return
 
+        # فلترة الأوامر غير الصحيحة (لكن بعد التسجيل)
         if not is_valid_command(user_text):
             logger.info(f"تجاهل: {user_text[:30]}")
             return
