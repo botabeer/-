@@ -218,8 +218,8 @@ def normalize_tasbih(text):
     return mapping.get(text)
 
 def auto_reminder_service():
-    """خدمة التذكير التلقائي في الخلفية - أوقات متفرقة"""
-    logger.info("بدء خدمة التذكير التلقائي")
+    """خدمة التذكير التلقائي في الخلفية - أوقات متفرقة - يستخدم fadl.json"""
+    logger.info("بدء خدمة التذكير التلقائي (من ملف الفضل)")
     
     while AUTO_REMINDER_ENABLED:
         try:
@@ -230,14 +230,13 @@ def auto_reminder_service():
             time.sleep(sleep_seconds)
             
             if len(target_users) > 0 or len(target_groups) > 0:
-                adhkar_list = content.get("adhkar", [])
-                
-                if adhkar_list:
-                    message = random.choice(adhkar_list)
+                # استخدام ملف fadl.json بدلاً من content.json
+                if fadl_content:
+                    message = random.choice(fadl_content)
                     sent, failed = broadcast_text(message)
-                    logger.info(f"تذكير تلقائي: تم الإرسال إلى {sent} - فشل {failed}")
+                    logger.info(f"تذكير تلقائي (فضل): تم الإرسال إلى {sent} - فشل {failed}")
                 else:
-                    logger.warning("لا يوجد أذكار متاحة للإرسال")
+                    logger.warning("لا يوجد فضل متاح للإرسال في fadl.json")
             else:
                 logger.info("لا يوجد مستخدمين مسجلين")
                 
@@ -349,7 +348,8 @@ def handle_message(event):
 
 ملاحظة:
 - يتم تصفير العداد تلقائيا كل يوم
-- يتم ارسال تذكير تلقائي في أوقات متفرقة
+- التذكير اليدوي (ذكرني): أذكار قصيرة
+- التذكير التلقائي: فضائل العبادات
 
 تم إنشاء هذا البوت بواسطة عبير الدوسري"""
             reply_message(event.reply_token, help_text)
@@ -446,7 +446,7 @@ def handle_message(event):
             reply_message(event.reply_token, get_tasbih_status(user_id, gid))
             return
 
-        # أمر ذكرني
+        # أمر ذكرني - يستخدم content.json (أذكار قصيرة)
         if text_lower == "ذكرني":
             try:
                 adhkar_list = content.get("adhkar", [])
@@ -537,11 +537,10 @@ def stats():
 
 @app.route("/test_reminder", methods=["GET"])
 def test_reminder():
-    """اختبار التذكير اليدوي"""
+    """اختبار التذكير اليدوي - يستخدم fadl.json"""
     try:
-        adhkar_list = content.get("adhkar", [])
-        if adhkar_list:
-            message = random.choice(adhkar_list)
+        if fadl_content:
+            message = random.choice(fadl_content)
             sent, failed = broadcast_text(message)
             return jsonify({
                 "status": "success",
@@ -551,7 +550,7 @@ def test_reminder():
                 "disabled_count": len(notifications_off)
             }), 200
         else:
-            return jsonify({"status": "error", "message": "no adhkar available"}), 400
+            return jsonify({"status": "error", "message": "no fadl available in fadl.json"}), 400
     except Exception as e:
         logger.error(f"خطأ في اختبار التذكير: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -568,5 +567,7 @@ if __name__ == "__main__":
     logger.info(f"محتوى الفضل: {len(fadl_content)}")
     logger.info(f"التذكير التلقائي: {'مفعل' if AUTO_REMINDER_ENABLED else 'معطل'}")
     logger.info(f"فترة التذكير: {MIN_INTERVAL_HOURS}-{MAX_INTERVAL_HOURS} ساعة (أوقات متفرقة)")
+    logger.info("مصدر التذكير اليدوي (ذكرني): content.json (أذكار)")
+    logger.info("مصدر التذكير التلقائي: fadl.json (فضائل)")
     logger.info("=" * 50)
     app.run(host="0.0.0.0", port=PORT)
