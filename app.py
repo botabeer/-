@@ -25,6 +25,7 @@ DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
 
 def load_json(file, default):
+    """تحميل ملف JSON مع معالجة الأخطاء"""
     if not os.path.exists(file):
         with open(file, "w", encoding="utf-8") as f:
             json.dump(default, f, ensure_ascii=False, indent=2)
@@ -36,6 +37,7 @@ def load_json(file, default):
         return default
 
 def save_data():
+    """حفظ البيانات إلى ملف JSON"""
     try:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump({
@@ -46,8 +48,9 @@ def save_data():
                 "notifications_off": list(notifications_off)
             }, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        logger.error(f"خطأ حفظ: {e}")
+        logger.error(f"خطأ في الحفظ: {e}")
 
+# تحميل البيانات
 data = load_json(DATA_FILE, {"users": [], "groups": [], "tasbih": {}, "last_reset": {}, "notifications_off": []})
 target_users = set(data.get("users", []))
 target_groups = set(data.get("groups", []))
@@ -58,46 +61,47 @@ notifications_off = set(data.get("notifications_off", []))
 content = load_json(CONTENT_FILE, {"adhkar": []})
 fadl_content = load_json("fadl.json", {"fadl": []}).get("fadl", [])
 
-fadl_index = 0
 TASBIH_LIMITS = 33
 TASBIH_KEYS = ["استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر"]
 
-# إعدادات التذكير التلقائي
+# إعدادات التذكير التلقائي - أوقات متفرقة
 AUTO_REMINDER_ENABLED = True
-MIN_INTERVAL_HOURS = 4
-MAX_INTERVAL_HOURS = 6
+# أوقات متفرقة من ساعة إلى 8 ساعات
+MIN_INTERVAL_HOURS = 1
+MAX_INTERVAL_HOURS = 8
 
 def get_next_fadl():
-    global fadl_index
+    """الحصول على فضل عشوائي"""
     if not fadl_content:
-        return "لا يوجد فضل متاح"
-    msg = fadl_content[fadl_index]
-    fadl_index = (fadl_index + 1) % len(fadl_content)
-    return msg
+        return "لا يوجد فضل متاح حاليا"
+    return random.choice(fadl_content)
 
 def send_message(target_id, text):
+    """إرسال رسالة إلى مستخدم أو مجموعة"""
     try:
         with ApiClient(configuration) as api_client:
             api = MessagingApi(api_client)
             api.push_message(PushMessageRequest(to=target_id, messages=[TextMessage(text=text)]))
         return True
     except Exception as e:
-        if "400" not in str(e) and "403" not in str(e):
-            logger.error(f"ارسال فشل {target_id}: {e}")
+        error_str = str(e)
+        if "400" not in error_str and "403" not in error_str:
+            logger.error(f"فشل الإرسال إلى {target_id}: {e}")
         return False
 
 def reply_message(reply_token, text):
+    """الرد على رسالة"""
     try:
         with ApiClient(configuration) as api_client:
             api = MessagingApi(api_client)
             api.reply_message(ReplyMessageRequest(reply_token=reply_token, messages=[TextMessage(text=text)]))
         return True
     except Exception as e:
-        logger.error(f"رد فشل: {e}")
+        logger.error(f"فشل الرد: {e}")
         return False
 
 def broadcast_text(text, exclude_user=None, exclude_group=None):
-    """إرسال لجميع المستخدمين والمجموعات (مع احترام إعدادات الإيقاف)"""
+    """إرسال رسالة جماعية لجميع المستخدمين والمجموعات"""
     sent, failed = 0, 0
     
     for uid in list(target_users):
@@ -114,10 +118,11 @@ def broadcast_text(text, exclude_user=None, exclude_group=None):
             else:
                 failed += 1
     
-    logger.info(f"ارسال: {sent} نجح، {failed} فشل")
+    logger.info(f"الإرسال الجماعي: {sent} نجح، {failed} فشل")
     return sent, failed
 
 def get_user_name(user_id):
+    """الحصول على اسم المستخدم"""
     try:
         with ApiClient(configuration) as api_client:
             api = MessagingApi(api_client)
@@ -127,6 +132,7 @@ def get_user_name(user_id):
         return "المستخدم"
 
 def get_group_member_name(group_id, user_id):
+    """الحصول على اسم عضو في المجموعة"""
     try:
         with ApiClient(configuration) as api_client:
             api = MessagingApi(api_client)
@@ -136,12 +142,15 @@ def get_group_member_name(group_id, user_id):
         return "المستخدم"
 
 def ensure_user_counts(uid):
+    """التأكد من وجود بيانات التسبيح للمستخدم"""
     if uid not in tasbih_counts:
         tasbih_counts[uid] = {key: 0 for key in TASBIH_KEYS}
         last_reset_dates[uid] = str(date.today())
         save_data()
+        logger.info(f"تم إنشاء بيانات تسبيح جديدة للمستخدم: {uid}")
 
 def reset_tasbih_if_needed(user_id):
+    """تصفير التسبيح إذا كان يوم جديد"""
     today = str(date.today())
     last_reset = last_reset_dates.get(user_id)
     
@@ -149,12 +158,15 @@ def reset_tasbih_if_needed(user_id):
         tasbih_counts[user_id] = {key: 0 for key in TASBIH_KEYS}
         last_reset_dates[user_id] = today
         save_data()
+        logger.info(f"تم تصفير التسبيح تلقائيًا للمستخدم: {user_id}")
         return True
     return False
 
 def get_tasbih_status(user_id, gid=None):
+    """عرض حالة التسبيح للمستخدم"""
     counts = tasbih_counts[user_id]
     name = get_group_member_name(gid, user_id) if gid else get_user_name(user_id)
+    
     status = f"حالة التسبيح\n{name}\n\n"
     
     for key in TASBIH_KEYS:
@@ -168,21 +180,26 @@ def get_tasbih_status(user_id, gid=None):
     return status
 
 def normalize_tasbih(text):
+    """تطبيع نص التسبيح للمقارنة"""
     text = text.replace(" ", "").replace("ٱ", "ا").replace("أ", "ا").replace("إ", "ا").replace("ة", "ه")
-    m = {
+    
+    mapping = {
         "استغفرالله": "استغفر الله",
         "سبحانالله": "سبحان الله",
         "الحمدلله": "الحمد لله",
-        "اللهأكبر": "الله أكبر"
+        "اللهأكبر": "الله أكبر",
+        "اللهاكبر": "الله أكبر"
     }
-    return m.get(text)
+    
+    return mapping.get(text)
 
 def auto_reminder_service():
-    """خدمة التذكير التلقائي"""
+    """خدمة التذكير التلقائي في الخلفية - أوقات متفرقة"""
     logger.info("بدء خدمة التذكير التلقائي")
     
     while AUTO_REMINDER_ENABLED:
         try:
+            # حساب وقت عشوائي متفرق للتذكير القادم
             sleep_hours = random.uniform(MIN_INTERVAL_HOURS, MAX_INTERVAL_HOURS)
             sleep_seconds = sleep_hours * 3600
             
@@ -195,9 +212,9 @@ def auto_reminder_service():
                 if adhkar_list:
                     message = random.choice(adhkar_list)
                     sent, failed = broadcast_text(message)
-                    logger.info(f"تذكير تلقائي: تم الارسال الى {sent} - فشل {failed}")
+                    logger.info(f"تذكير تلقائي: تم الإرسال إلى {sent} - فشل {failed}")
                 else:
-                    logger.warning("لا يوجد أذكار للتذكير")
+                    logger.warning("لا يوجد أذكار متاحة للإرسال")
             else:
                 logger.info("لا يوجد مستخدمين مسجلين")
                 
@@ -205,77 +222,56 @@ def auto_reminder_service():
             logger.error(f"خطأ في التذكير التلقائي: {e}")
             time.sleep(3600)
 
+# بدء خدمة التذكير التلقائي
 if AUTO_REMINDER_ENABLED:
     reminder_thread = threading.Thread(target=auto_reminder_service, daemon=True)
     reminder_thread.start()
     logger.info("تم تشغيل خدمة التذكير التلقائي")
 
-links_count = {}
-
-def handle_links(event, user_id, gid=None):
-    try:
-        text = event.message.text.strip()
-        if any(x in text.lower() for x in ["http://", "https://", "www."]):
-            links_count[user_id] = links_count.get(user_id, 0) + 1
-            if links_count[user_id] == 2:
-                name = get_group_member_name(gid, user_id) if gid else get_user_name(user_id)
-                reply_message(event.reply_token, f"{name}\nالرجاء عدم تكرار إرسال الروابط")
-                return True
-            elif links_count[user_id] >= 3:
-                logger.info(f"تم تجاهل رابط من {user_id}")
-                return True
-            return True
-    except:
-        pass
-    return False
-
-def check_salam(text):
-    salam = ["السلام عليكم", "سلام عليكم", "السلام", "سلام", "عليكم السلام"]
-    return any(s in text.lower() for s in salam)
-
-VALID_COMMANDS = ["مساعدة", "فضل", "تسبيح", "استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر", "ذكرني", "إعادة", "إيقاف", "تشغيل"]
-
 def is_valid_command(text):
+    """التحقق من صحة الأمر"""
+    valid_commands = ["مساعدة", "فضل", "تسبيح", "ذكرني", "إعادة", "إيقاف", "تشغيل", "احصائيات"]
     txt = text.lower().strip()
-    if check_salam(text) or txt in [c.lower() for c in VALID_COMMANDS] or normalize_tasbih(text):
+    
+    if txt in [c.lower() for c in valid_commands]:
+        return True
+    if normalize_tasbih(text):
         return True
     return False
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    """معالج الرسائل الرئيسي"""
     try:
         user_text = event.message.text.strip()
         user_id = event.source.user_id
         gid = getattr(event.source, "group_id", None)
 
+        # تسجيل المستخدم الجديد
         if user_id not in target_users:
             target_users.add(user_id)
             save_data()
             logger.info(f"مستخدم جديد: {user_id}")
 
+        # تسجيل المجموعة الجديدة
         if gid and gid not in target_groups:
             target_groups.add(gid)
             save_data()
             logger.info(f"مجموعة جديدة: {gid}")
 
+        # التأكد من وجود بيانات التسبيح
         ensure_user_counts(user_id)
         was_reset = reset_tasbih_if_needed(user_id)
 
-        if handle_links(event, user_id, gid):
-            return
-
+        # تجاهل الرسائل غير الصحيحة - البوت صامت
         if not is_valid_command(user_text):
-            logger.info(f"تجاهل: {user_text[:30]}")
             return
 
         text_lower = user_text.lower()
 
-        if check_salam(user_text):
-            reply_message(event.reply_token, "وعليكم السلام ورحمة الله وبركاته")
-            return
-
+        # أمر المساعدة
         if text_lower == "مساعدة":
-            help_text = """الأوامر المتاحة:
+            help_text = """بوت85 - الأوامر المتاحة
 
 ذكرني
 ارسال ذكر لجميع المستخدمين والمجموعات
@@ -295,6 +291,9 @@ def handle_message(event):
 تشغيل
 تشغيل التذكير التلقائي
 
+احصائيات
+عرض إحصائيات البوت
+
 التسبيح الإلكتروني:
 اكتب أي من الأذكار التالية لزيادة العداد حتى 33 مرة:
 - سبحان الله
@@ -302,44 +301,46 @@ def handle_message(event):
 - الله أكبر
 - استغفر الله
 
-ملاحظة: 
+ملاحظة:
 - يتم تصفير العداد تلقائيا كل يوم
-- يتم ارسال تذكير تلقائي كل 4-6 ساعات"""
+- يتم ارسال تذكير تلقائي في أوقات متفرقة
+
+تم إنشاء هذا البوت بواسطة عبير الدوسري"""
             reply_message(event.reply_token, help_text)
             return
 
+        # أمر إيقاف التذكير
         if text_lower == "إيقاف":
             target_id = gid if gid else user_id
             if target_id not in notifications_off:
                 notifications_off.add(target_id)
                 save_data()
-                if gid:
-                    reply_message(event.reply_token, "تم إيقاف التذكير التلقائي لهذه المجموعة")
-                else:
-                    reply_message(event.reply_token, "تم إيقاف التذكير التلقائي لك")
+                msg = "تم إيقاف التذكير التلقائي لهذه المجموعة" if gid else "تم إيقاف التذكير التلقائي لك"
+                reply_message(event.reply_token, msg)
                 logger.info(f"إيقاف التذكير: {target_id}")
             else:
                 reply_message(event.reply_token, "التذكير موقف مسبقا")
             return
 
+        # أمر تشغيل التذكير
         if text_lower == "تشغيل":
             target_id = gid if gid else user_id
             if target_id in notifications_off:
                 notifications_off.remove(target_id)
                 save_data()
-                if gid:
-                    reply_message(event.reply_token, "تم تشغيل التذكير التلقائي لهذه المجموعة")
-                else:
-                    reply_message(event.reply_token, "تم تشغيل التذكير التلقائي لك")
+                msg = "تم تشغيل التذكير التلقائي لهذه المجموعة" if gid else "تم تشغيل التذكير التلقائي لك"
+                reply_message(event.reply_token, msg)
                 logger.info(f"تشغيل التذكير: {target_id}")
             else:
                 reply_message(event.reply_token, "التذكير يعمل مسبقا")
             return
 
+        # أمر الفضل
         if text_lower == "فضل":
             reply_message(event.reply_token, get_next_fadl())
             return
 
+        # أمر التسبيح
         if text_lower == "تسبيح":
             status = get_tasbih_status(user_id, gid)
             if was_reset:
@@ -347,6 +348,7 @@ def handle_message(event):
             reply_message(event.reply_token, status)
             return
 
+        # أمر الإعادة
         if text_lower == "إعادة":
             tasbih_counts[user_id] = {key: 0 for key in TASBIH_KEYS}
             last_reset_dates[user_id] = str(date.today())
@@ -355,9 +357,31 @@ def handle_message(event):
             logger.info(f"تم تصفير التسبيح يدويا: {user_id}")
             return
 
+        # أمر الإحصائيات
+        if text_lower == "احصائيات":
+            total_tasbih = sum(sum(counts.values()) for counts in tasbih_counts.values())
+            active_receivers = len(target_users) + len(target_groups) - len(notifications_off)
+            
+            stats_text = f"""احصائيات بوت85
+
+إجمالي المستخدمين: {len(target_users)}
+إجمالي المجموعات: {len(target_groups)}
+إجمالي التسبيحات: {total_tasbih}
+المستخدمون النشطون: {len(tasbih_counts)}
+المستقبلون النشطون: {active_receivers}
+التذكير موقف: {len(notifications_off)}
+التذكير التلقائي: {'مفعل' if AUTO_REMINDER_ENABLED else 'معطل'}
+فترة التذكير: {MIN_INTERVAL_HOURS}-{MAX_INTERVAL_HOURS} ساعة (أوقات متفرقة)
+
+تم إنشاء هذا البوت بواسطة عبير الدوسري"""
+            reply_message(event.reply_token, stats_text)
+            return
+
+        # معالجة التسبيح
         normalized = normalize_tasbih(user_text)
         if normalized:
             counts = tasbih_counts[user_id]
+            
             if counts[normalized] >= TASBIH_LIMITS:
                 reply_message(event.reply_token, f"تم اكتمال {normalized} مسبقا\nاستخدم أمر: إعادة\nلتصفير العداد")
                 return
@@ -369,12 +393,14 @@ def handle_message(event):
                 reply_message(event.reply_token, f"تم اكتمال {normalized}")
                 
                 if all(counts[k] >= TASBIH_LIMITS for k in TASBIH_KEYS):
+                    time.sleep(1)
                     send_message(user_id, "تم اكتمال جميع التسبيحات الأربعة\nجزاك الله خيرا")
                 return
             
             reply_message(event.reply_token, get_tasbih_status(user_id, gid))
             return
 
+        # أمر ذكرني
         if text_lower == "ذكرني":
             try:
                 adhkar_list = content.get("adhkar", [])
@@ -392,7 +418,7 @@ def handle_message(event):
                 sent, failed = broadcast_text(message, exclude_user=user_id, exclude_group=gid)
                 
                 logger.info(f"تم تنفيذ أمر ذكرني من {user_id}")
-                logger.info(f"تم الارسال الى: {sent} - فشل: {failed}")
+                logger.info(f"تم الإرسال إلى: {sent} - فشل: {failed}")
                 
             except Exception as e:
                 logger.error(f"خطأ في أمر ذكرني: {e}", exc_info=True)
@@ -400,22 +426,27 @@ def handle_message(event):
             return
 
     except Exception as e:
-        logger.error(f"خطأ معالجة الرسالة: {e}", exc_info=True)
+        logger.error(f"خطأ في معالجة الرسالة: {e}", exc_info=True)
 
 @app.route("/", methods=["GET"])
 def home():
+    """الصفحة الرئيسية"""
     return jsonify({
         "status": "running",
-        "bot": "Islamic Reminder Bot",
+        "bot": "بوت85",
+        "creator": "عبير الدوسري",
+        "version": "2.0",
         "users": len(target_users),
         "groups": len(target_groups),
-        "notifications_disabled": len(notifications_off)
+        "notifications_disabled": len(notifications_off),
+        "auto_reminder": AUTO_REMINDER_ENABLED
     }), 200
 
 @app.route("/health", methods=["GET"])
 def health():
+    """فحص صحة البوت"""
     return jsonify({
-        "status": "ok",
+        "status": "healthy",
         "users": len(target_users),
         "groups": len(target_groups),
         "timestamp": datetime.now().isoformat()
@@ -423,22 +454,29 @@ def health():
 
 @app.route("/callback", methods=["POST"])
 def callback():
+    """معالج webhook من LINE"""
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
+    
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         logger.warning("توقيع غير صالح")
         return "Invalid signature", 400
     except Exception as e:
-        logger.error(f"خطأ webhook: {e}", exc_info=True)
+        logger.error(f"خطأ في webhook: {e}", exc_info=True)
+    
     return "OK", 200
 
 @app.route("/stats", methods=["GET"])
 def stats():
+    """عرض الإحصائيات"""
     total_tasbih = sum(sum(counts.values()) for counts in tasbih_counts.values())
     active_receivers = len(target_users) + len(target_groups) - len(notifications_off)
+    
     return jsonify({
+        "bot_name": "بوت85",
+        "creator": "عبير الدوسري",
         "total_users": len(target_users),
         "total_groups": len(target_groups),
         "total_tasbih_count": total_tasbih,
@@ -446,11 +484,14 @@ def stats():
         "notifications_disabled": len(notifications_off),
         "active_receivers": active_receivers,
         "auto_reminder_enabled": AUTO_REMINDER_ENABLED,
-        "reminder_interval": f"{MIN_INTERVAL_HOURS}-{MAX_INTERVAL_HOURS} hours"
+        "reminder_interval": f"{MIN_INTERVAL_HOURS}-{MAX_INTERVAL_HOURS} hours",
+        "adhkar_count": len(content.get("adhkar", [])),
+        "fadl_count": len(fadl_content)
     }), 200
 
 @app.route("/test_reminder", methods=["GET"])
 def test_reminder():
+    """اختبار التذكير اليدوي"""
     try:
         adhkar_list = content.get("adhkar", [])
         if adhkar_list:
@@ -458,24 +499,28 @@ def test_reminder():
             sent, failed = broadcast_text(message)
             return jsonify({
                 "status": "success",
-                "message": message[:100],
+                "message": message[:100] + "..." if len(message) > 100 else message,
                 "sent": sent,
                 "failed": failed,
                 "disabled_count": len(notifications_off)
             }), 200
         else:
-            return jsonify({"status": "error", "message": "no adhkar"}), 400
+            return jsonify({"status": "error", "message": "no adhkar available"}), 400
     except Exception as e:
+        logger.error(f"خطأ في اختبار التذكير: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
-    logger.info("=" * 40)
-    logger.info(f"تشغيل البوت على المنفذ {PORT}")
-    logger.info(f"المستخدمين: {len(target_users)}")
+    logger.info("=" * 50)
+    logger.info("بوت85 - تم إنشاؤه بواسطة عبير الدوسري")
+    logger.info("=" * 50)
+    logger.info(f"المنفذ: {PORT}")
+    logger.info(f"المستخدمون: {len(target_users)}")
     logger.info(f"المجموعات: {len(target_groups)}")
     logger.info(f"التذكير موقف لـ: {len(notifications_off)}")
     logger.info(f"محتوى الأذكار: {len(content.get('adhkar', []))}")
+    logger.info(f"محتوى الفضل: {len(fadl_content)}")
     logger.info(f"التذكير التلقائي: {'مفعل' if AUTO_REMINDER_ENABLED else 'معطل'}")
-    logger.info(f"فترة التذكير: {MIN_INTERVAL_HOURS}-{MAX_INTERVAL_HOURS} ساعة")
-    logger.info("=" * 40)
+    logger.info(f"فترة التذكير: {MIN_INTERVAL_HOURS}-{MAX_INTERVAL_HOURS} ساعة (أوقات متفرقة)")
+    logger.info("=" * 50)
     app.run(host="0.0.0.0", port=PORT)
