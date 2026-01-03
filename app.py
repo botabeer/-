@@ -6,7 +6,7 @@ from linebot.v3.messaging import (
     ReplyMessageRequest, PushMessageRequest, TextMessage
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
-import os, random, json, logging, threading, time
+import os, random, json, logging, threading, time, re
 from datetime import datetime, date
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -24,6 +24,19 @@ handler = WebhookHandler(SECRET)
 DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
 
+# Lock لمنع مشاكل الكتابة المتزامنة
+data_lock = threading.Lock()
+
+# تخزين الروابط لكل مستخدم
+user_links = {}
+
+# كلمات السلام المعتمدة
+SALAM_WORDS = [
+    "السلام عليكم",
+    "السلام عليكم ورحمة الله",
+    "السلام عليكم ورحمة الله وبركاته"
+]
+
 def load_json(file, default):
     """تحميل ملف JSON مع معالجة الأخطاء"""
     if not os.path.exists(file):
@@ -37,21 +50,28 @@ def load_json(file, default):
         return default
 
 def save_data():
-    """حفظ البيانات إلى ملف JSON"""
+    """حفظ البيانات إلى ملف JSON مع Thread Safety"""
     try:
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({
-                "users": list(target_users),
-                "groups": list(target_groups),
-                "tasbih": tasbih_counts,
-                "last_reset": last_reset_dates,
-                "notifications_off": list(notifications_off)
-            }, f, ensure_ascii=False, indent=2)
+        with data_lock:
+            with open(DATA_FILE, "w", encoding="utf-8") as f:
+                json.dump({
+                    "users": list(target_users),
+                    "groups": list(target_groups),
+                    "tasbih": tasbih_counts,
+                    "last_reset": last_reset_dates,
+                    "notifications_off": list(notifications_off)
+                }, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error(f"خطأ في الحفظ: {e}")
 
-# تحميل البيانات
-data = load_json(DATA_FILE, {"users": [], "groups": [], "tasbih": {}, "last_reset": {}, "notifications_off": []})
+# تحميل البيانات - إصلاح مشكلة last_reset_dates
+data = load_json(DATA_FILE, {
+    "users": [], 
+    "groups": [], 
+    "tasbih": {}, 
+    "last_reset": {},
+    "notifications_off": []
+})
 target_users = set(data.get("users", []))
 target_groups = set(data.get("groups", []))
 tasbih_counts = data.get("tasbih", {})
@@ -66,9 +86,13 @@ TASBIH_KEYS = ["استغفر الله", "سبحان الله", "الحمد لل�
 
 # إعدادات التذكير التلقائي - أوقات متفرقة
 AUTO_REMINDER_ENABLED = True
-# أوقات متفرقة من ساعة إلى 8 ساعات
 MIN_INTERVAL_HOURS = 1
 MAX_INTERVAL_HOURS = 8
+
+def extract_links(text):
+    """استخراج الروابط من النص"""
+    url_pattern = r'(https?://\S+|www\.\S+)'
+    return re.findall(url_pattern, text)
 
 def get_next_fadl():
     """الحصول على فضل عشوائي"""
@@ -199,7 +223,6 @@ def auto_reminder_service():
     
     while AUTO_REMINDER_ENABLED:
         try:
-            # حساب وقت عشوائي متفرق للتذكير القادم
             sleep_hours = random.uniform(MIN_INTERVAL_HOURS, MAX_INTERVAL_HOURS)
             sleep_seconds = sleep_hours * 3600
             
@@ -247,6 +270,11 @@ def handle_message(event):
         user_id = event.source.user_id
         gid = getattr(event.source, "group_id", None)
 
+        # الرد على السلام
+        if user_text in SALAM_WORDS:
+            reply_message(event.reply_token, "وعليكم السلام ورحمة الله وبركاته")
+            return
+
         # تسجيل المستخدم الجديد
         if user_id not in target_users:
             target_users.add(user_id)
@@ -258,6 +286,24 @@ def handle_message(event):
             target_groups.add(gid)
             save_data()
             logger.info(f"مجموعة جديدة: {gid}")
+
+        # تحذير من تكرار الروابط (فقط في المجموعات)
+        if gid:
+            links = extract_links(user_text)
+            
+            if links:
+                if user_id not in user_links:
+                    user_links[user_id] = set()
+                
+                for link in links:
+                    if link in user_links[user_id]:
+                        reply_message(
+                            event.reply_token,
+                            "تنبيه:\nممنوع تكرار نفس الرابط أكثر من مرة"
+                        )
+                        return
+                    else:
+                        user_links[user_id].add(link)
 
         # التأكد من وجود بيانات التسبيح
         ensure_user_counts(user_id)
@@ -435,7 +481,7 @@ def home():
         "status": "running",
         "bot": "بوت85",
         "creator": "عبير الدوسري",
-        "version": "2.0",
+        "version": "2.1",
         "users": len(target_users),
         "groups": len(target_groups),
         "notifications_disabled": len(notifications_off),
