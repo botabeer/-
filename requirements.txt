@@ -1,9 +1,4 @@
-Flask
-line-bot-sdk
-python-dotenv
-apscheduler
-gunicorn
-pytz
-praytimes
-aiohttp>=3.8.7
-requests==2.31.0
+Flask==3.0.0
+line-bot-sdk==3.10.0
+python-dotenv==1.0.0
+gunicorn==23.0.0
