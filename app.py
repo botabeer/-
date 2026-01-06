@@ -6,7 +6,7 @@ from linebot.v3.messaging import (
     ReplyMessageRequest, PushMessageRequest, TextMessage
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
-import os, random, json, logging, threading, time, re
+import os, random, json, logging, threading, time, re, requests
 from datetime import datetime, date
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -17,6 +17,7 @@ app = Flask(__name__)
 ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 SECRET = os.getenv("LINE_CHANNEL_SECRET")
 PORT = int(os.getenv("PORT", 5000))
+HEROKU_URL = os.getenv("HEROKU_URL", "")  # جديد
 
 configuration = Configuration(access_token=ACCESS_TOKEN)
 handler = WebhookHandler(SECRET)
@@ -64,7 +65,7 @@ def save_data():
     except Exception as e:
         logger.error(f"خطأ في الحفظ: {e}")
 
-# تحميل البيانات - إصلاح مشكلة last_reset_dates
+# تحميل البيانات
 data = load_json(DATA_FILE, {
     "users": [], 
     "groups": [], 
@@ -84,7 +85,7 @@ fadl_content = load_json("fadl.json", {"fadl": []}).get("fadl", [])
 TASBIH_LIMITS = 33
 TASBIH_KEYS = ["استغفر الله", "سبحان الله", "الحمد لله", "الله أكبر"]
 
-# إعدادات التذكير التلقائي - أوقات متفرقة
+# إعدادات التذكير التلقائي
 AUTO_REMINDER_ENABLED = True
 MIN_INTERVAL_HOURS = 1
 MAX_INTERVAL_HOURS = 8
@@ -217,38 +218,74 @@ def normalize_tasbih(text):
     
     return mapping.get(text)
 
+# ========================================
+# خدمة Keep-Alive الجديدة
+# ========================================
+def keep_heroku_alive():
+    """إرسال ping للبوت نفسه كل 5 دقائق لمنع النوم"""
+    time.sleep(60)  # انتظر دقيقة قبل البدء
+    
+    if not HEROKU_URL:
+        logger.warning("✗ HEROKU_URL غير موجود - Self-Ping معطل")
+        logger.warning("→ أضف المتغير في Heroku: HEROKU_URL=https://your-bot.herokuapp.com")
+        return
+    
+    logger.info(f"✓ بدء خدمة Keep-Alive للرابط: {HEROKU_URL}")
+    
+    while True:
+        try:
+            time.sleep(300)  # كل 5 دقائق
+            
+            response = requests.get(f"{HEROKU_URL}/health", timeout=10)
+            
+            if response.status_code == 200:
+                logger.info("✓ Keep-Alive: البوت نشط")
+            else:
+                logger.warning(f"✗ Keep-Alive: استجابة {response.status_code}")
+                
+        except Exception as e:
+            logger.error(f"✗ خطأ في Keep-Alive: {e}")
+            time.sleep(300)
+
+# ========================================
+# خدمة التذكير التلقائي المحسّنة
+# ========================================
 def auto_reminder_service():
-    """خدمة التذكير التلقائي في الخلفية - أوقات متفرقة - يستخدم fadl.json"""
-    logger.info("بدء خدمة التذكير التلقائي (من ملف الفضل)")
+    """خدمة التذكير التلقائي - أوقات متفرقة"""
+    logger.info("✓ بدء خدمة التذكير التلقائي (من ملف الفضل)")
     
     while AUTO_REMINDER_ENABLED:
         try:
             sleep_hours = random.uniform(MIN_INTERVAL_HOURS, MAX_INTERVAL_HOURS)
             sleep_seconds = sleep_hours * 3600
             
-            logger.info(f"التذكير القادم بعد {sleep_hours:.1f} ساعة")
+            logger.info(f"→ التذكير القادم بعد {sleep_hours:.1f} ساعة")
             time.sleep(sleep_seconds)
             
             if len(target_users) > 0 or len(target_groups) > 0:
-                # استخدام ملف fadl.json بدلاً من content.json
                 if fadl_content:
                     message = random.choice(fadl_content)
                     sent, failed = broadcast_text(message)
-                    logger.info(f"تذكير تلقائي (فضل): تم الإرسال إلى {sent} - فشل {failed}")
+                    logger.info(f"→ تذكير تلقائي (فضل): تم الإرسال إلى {sent} - فشل {failed}")
                 else:
-                    logger.warning("لا يوجد فضل متاح للإرسال في fadl.json")
+                    logger.warning("✗ لا يوجد فضل متاح للإرسال في fadl.json")
             else:
-                logger.info("لا يوجد مستخدمين مسجلين")
+                logger.info("✗ لا يوجد مستخدمين مسجلين")
                 
         except Exception as e:
-            logger.error(f"خطأ في التذكير التلقائي: {e}")
+            logger.error(f"✗ خطأ في التذكير التلقائي: {e}")
             time.sleep(3600)
 
-# بدء خدمة التذكير التلقائي
+# تشغيل خدمة Keep-Alive
+keep_alive_thread = threading.Thread(target=keep_heroku_alive, daemon=True)
+keep_alive_thread.start()
+logger.info("✓ تم تشغيل خدمة Keep-Alive")
+
+# تشغيل خدمة التذكير التلقائي
 if AUTO_REMINDER_ENABLED:
     reminder_thread = threading.Thread(target=auto_reminder_service, daemon=True)
     reminder_thread.start()
-    logger.info("تم تشغيل خدمة التذكير التلقائي")
+    logger.info("✓ تم تشغيل خدمة التذكير التلقائي")
 
 def is_valid_command(text):
     """التحقق من صحة الأمر"""
@@ -407,6 +444,7 @@ def handle_message(event):
 المستقبلون النشطون: {active_receivers}
 التذكير موقف: {len(notifications_off)}
 التذكير التلقائي: {'مفعل' if AUTO_REMINDER_ENABLED else 'معطل'}
+Keep-Alive: {'مفعل' if HEROKU_URL else 'معطل'}
 فترة التذكير: {MIN_INTERVAL_HOURS}-{MAX_INTERVAL_HOURS} ساعة (أوقات متفرقة)
 
 تم إنشاء هذا البوت بواسطة عبير الدوسري"""
@@ -436,7 +474,7 @@ def handle_message(event):
             reply_message(event.reply_token, get_tasbih_status(user_id, gid))
             return
 
-        # أمر ذكرني - يستخدم content.json (أذكار قصيرة)
+        # أمر ذكرني
         if text_lower == "ذكرني":
             try:
                 adhkar_list = content.get("adhkar", [])
@@ -471,11 +509,12 @@ def home():
         "status": "running",
         "bot": "بوت85",
         "creator": "عبير الدوسري",
-        "version": "2.1",
+        "version": "2.2",
         "users": len(target_users),
         "groups": len(target_groups),
         "notifications_disabled": len(notifications_off),
-        "auto_reminder": AUTO_REMINDER_ENABLED
+        "auto_reminder": AUTO_REMINDER_ENABLED,
+        "keep_alive": bool(HEROKU_URL)
     }), 200
 
 @app.route("/health", methods=["GET"])
@@ -520,6 +559,7 @@ def stats():
         "notifications_disabled": len(notifications_off),
         "active_receivers": active_receivers,
         "auto_reminder_enabled": AUTO_REMINDER_ENABLED,
+        "keep_alive_enabled": bool(HEROKU_URL),
         "reminder_interval": f"{MIN_INTERVAL_HOURS}-{MAX_INTERVAL_HOURS} hours",
         "adhkar_count": len(content.get("adhkar", [])),
         "fadl_count": len(fadl_content)
@@ -527,7 +567,7 @@ def stats():
 
 @app.route("/test_reminder", methods=["GET"])
 def test_reminder():
-    """اختبار التذكير اليدوي - يستخدم fadl.json"""
+    """اختبار التذكير اليدوي"""
     try:
         if fadl_content:
             message = random.choice(fadl_content)
@@ -556,6 +596,7 @@ if __name__ == "__main__":
     logger.info(f"محتوى الأذكار: {len(content.get('adhkar', []))}")
     logger.info(f"محتوى الفضل: {len(fadl_content)}")
     logger.info(f"التذكير التلقائي: {'مفعل' if AUTO_REMINDER_ENABLED else 'معطل'}")
+    logger.info(f"Keep-Alive: {'مفعل ✓' if HEROKU_URL else 'معطل ✗'}")
     logger.info(f"فترة التذكير: {MIN_INTERVAL_HOURS}-{MAX_INTERVAL_HOURS} ساعة (أوقات متفرقة)")
     logger.info("مصدر التذكير اليدوي (ذكرني): content.json (أذكار)")
     logger.info("مصدر التذكير التلقائي: fadl.json (فضائل)")
